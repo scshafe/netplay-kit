@@ -36,6 +36,12 @@ A datagram is at most 1200 bytes of UDP payload. With IPv6 (40) and UDP (8)
 headers that is 1248 bytes on the wire, under the tailnet's 1280-byte MTU, so
 no packet is fragmented by IP.
 
+The wire format is documented at the top of `include/npk/transport/wire.hpp`:
+a 16-byte header (magic, version, type, connection id, sequence, ack and ack
+bits), handshake bodies, and for established connections a list of frames
+(unreliable, reliable fragment, ping, pong, close). Handshake requests are
+padded to at least 128 bytes so no reply can exceed the request.
+
 ## Network path (prove early)
 
 The scshafe runner lane puts each service on its own tailnet node. The node is

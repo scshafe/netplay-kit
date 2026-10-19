@@ -7,7 +7,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_library(netplay_kit src/version.cpp)
+# Tests and sanitizers are this repository's own business: a game that pulls
+# netplay-kit in with FetchContent gets neither unless it asks.
+option(NPK_BUILD_TESTS "Build netplay-kit's tests" ${PROJECT_IS_TOP_LEVEL})
+option(NPK_SANITIZE "Build Debug with AddressSanitizer and UBSan" ${PROJECT_IS_TOP_LEVEL})
+if(NPK_SANITIZE AND CMAKE_BUILD_TYPE STREQUAL "Debug"
+   AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined
+                      -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined)
+endif()
+
+add_library(netplay_kit
+  src/version.cpp
+  src/transport/siphash.cpp
+  src/transport/wire.cpp)
 add_library(npk::netplay_kit ALIAS netplay_kit)
 target_include_directories(netplay_kit PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -16,9 +30,20 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(netplay_kit PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
-include(CTest)
-if(BUILD_TESTING)
-  add_executable(netplay_kit_smoke_test tests/smoke_test.cpp)
-  target_link_libraries(netplay_kit_smoke_test PRIVATE npk::netplay_kit)
-  add_test(NAME netplay_kit_smoke COMMAND netplay_kit_smoke_test)
+if(NPK_BUILD_TESTS)
+  enable_testing()
+  function(npk_test name)
+    add_executable(${name} tests/${name}.cpp)
+    target_link_libraries(${name} PRIVATE npk::netplay_kit)
+    target_include_directories(${name} PRIVATE tests)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+      target_compile_options(${name} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME ${name} COMMAND ${name})
+  endfunction()
+
+  npk_test(smoke_test)
+  npk_test(siphash_test)
+  npk_test(wire_test)
+  npk_test(wire_fuzz_test)
 endif()
