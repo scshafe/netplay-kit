@@ -163,6 +163,37 @@ client-side labelling choice (an input sampled at wall frame W is labelled
 W + delay), so the server and the canonical stream do not depend on it. Rollback
 covers what the delay does not.
 
+## Lobby and game server (milestone 3)
+
+Decided in `docs/decisions/0003-room-handoff.md` and `0004-http-and-json.md`.
+
+```
+ player ---HTTP/JSON---> npk-lobby <---register, results, assign (HTTP/JSON, shared secret)---> npk-gameserver
+   |                                                                                               ^
+   +------------------------ UDP: Join(room, token), then the match ------------------------------+
+```
+
+- **Game server**: one long-running container, many matches, `max_matches`
+  from its config. It owns one UDP port for all of them and one control HTTP
+  port. It registers with the lobby every few seconds, accepts `POST /rooms`
+  (room id, seats with their tokens) from the lobby only, refuses with 409 when
+  full, and reports each result to the lobby.
+- **Lobby**: rooms, seats, ready and start, as HTTP + JSON; long-polling for
+  changes. A room that is full and ready is assigned to a registered game server
+  that has room. Each player gets the server's UDP address, the room id and their
+  own token, and no one else's.
+- **Control authentication**: `Authorization: Bearer <shared secret>`, compared in
+  constant time, from a variable named in the environment. Plain HTTP: before public
+  hosting, a reverse proxy adds TLS.
+- **The game never appears here.** The game server is a library plus a `main`
+  helper that a game links with its `Simulation`; netplay-kit ships a toy-game
+  server as the example and for the compose file. `Simulation` gains an optional
+  `finished()` and `result_json()`.
+
+Planned PRs: in-tree JSON; HTTP server and client; matches hosted in rooms
+with tokens, and the game server; the lobby; the executables, images and a
+compose file with an end-to-end test.
+
 ## Network path (prove early)
 
 The scshafe runner lane puts each service on its own tailnet node. The node is
@@ -234,6 +265,7 @@ netplay-kit itself ships an example game and a compose file for local runs.
    identical hashes. In three steps: the rollback core and the delay rule (done);
    the session messages and the server and client sessions over the transport;
    hash checks, resync and hostile-input tests.
-3. The game server and lobby executables, plus Docker images.
+3. The game server and lobby executables, plus Docker images (see "Lobby and
+   game server").
 4. **The UDP-over-tailnet proof** on the PC (with the owner session).
 5. The home page.
