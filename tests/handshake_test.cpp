@@ -1,66 +1,14 @@
 // The handshake over the simulated network: it connects through loss, never
 // amplifies, keeps no state for unverified sources, and limits what it answers.
-#include <memory>
 #include <random>
 #include <vector>
 
 #include "check.hpp"
-#include "npk/transport/client.hpp"
-#include "npk/transport/server.hpp"
-#include "npk/transport/sim_link.hpp"
+#include "world.hpp"
 
 using namespace npk::transport;
 
 namespace {
-
-const Address kServer = Address::v4(10, 0, 0, 1, 7000);
-
-Address client_addr(int i) { return Address::v4(10, 1, static_cast<std::uint8_t>(i / 250), static_cast<std::uint8_t>(i % 250 + 1), 5000); }
-
-struct Peer {
-  std::unique_ptr<SimLink> link;
-  std::unique_ptr<Client> client;
-};
-
-struct World {
-  explicit World(std::uint64_t seed, const ServerConfig& cfg = {}) : net(seed) {
-    server_link = net.make_link(kServer);
-    ServerConfig c = cfg;
-    if (c.seed == 0) c.seed = seed * 7919 + 1;
-    server = std::make_unique<Server>(*server_link, c);
-  }
-
-  Client& add_client(int i, ClientConfig cc = {}) {
-    Peer p;
-    p.link = net.make_link(client_addr(i));
-    if (cc.seed == 0) cc.seed = static_cast<std::uint64_t>(i) * 104729 + 13;
-    p.client = std::make_unique<Client>(*p.link, kServer, cc);
-    clients.push_back(std::move(p));
-    return *clients.back().client;
-  }
-
-  void step(Micros tick = 1000) {
-    for (auto& c : clients) c.client->update(net.now());
-    server->update(net.now());
-    while (auto e = server->poll_event()) events.push_back(*e);
-    net.advance(tick);
-  }
-  void run(Micros duration, Micros tick = 1000) {
-    for (Micros t = 0; t < duration; t += tick) step(tick);
-  }
-
-  int count(ServerEvent::Type t) const {
-    int n = 0;
-    for (auto& e : events) n += e.type == t;
-    return n;
-  }
-
-  SimNetwork net;
-  std::unique_ptr<SimLink> server_link;
-  std::unique_ptr<Server> server;
-  std::vector<Peer> clients;
-  std::vector<ServerEvent> events;
-};
 
 void connects_on_a_clean_link() {
   World w(1);
@@ -348,6 +296,7 @@ void data_must_come_from_the_right_address_and_idle_connections_time_out() {
   c.connect(0);
   w.run(100'000);
   CHECK(c.state() == Client::State::Connected);
+  w.clients_silent = true;  // a live client would keep the connection alive itself
   auto stranger = w.net.make_link(client_addr(1));
   auto keepalive = [&](SimLink& from) {
     PacketBuilder b(Header{PacketType::Data, c.connection_id()});
@@ -364,11 +313,13 @@ void data_must_come_from_the_right_address_and_idle_connections_time_out() {
 
   // From the right address it does (a new connection, for a fresh start).
   World w2(12, cfg);
-  Client& c2 = w2.add_client(0, {.idle_timeout = 60'000'000});
+  Client& c2 = w2.add_client(0);
   c2.connect(0);
   w2.run(100'000);
+  w2.clients_silent = true;
   for (int i = 0; i < 6; ++i) {
-    PacketBuilder b(Header{PacketType::Data, c2.connection_id()});
+    // Sequence numbers must advance: a replayed packet does not count as life.
+    PacketBuilder b(Header{PacketType::Data, c2.connection_id(), static_cast<std::uint16_t>(100 + i)});
     b.add_ping(1, 0);
     w2.clients[0].link->send(kServer, b.bytes());
     w2.run(1'000'000);

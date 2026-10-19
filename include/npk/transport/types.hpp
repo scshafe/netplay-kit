@@ -14,6 +14,7 @@ enum class DisconnectReason : std::uint8_t {
   Timeout = 1,         // nothing heard for too long
   Replaced = 2,        // the same address connected again
   ServerShutdown = 3,
+  ProtocolError = 4,   // the peer broke a bound or a rule
 };
 
 }  // namespace npk::transport

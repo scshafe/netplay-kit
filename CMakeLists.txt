@@ -22,6 +22,7 @@ add_library(netplay_kit
   src/version.cpp
   src/transport/address.cpp
   src/transport/client.cpp
+  src/transport/connection.cpp
   src/transport/server.cpp
   src/transport/siphash.cpp
   src/transport/sim_link.cpp
@@ -54,4 +55,5 @@ if(NPK_BUILD_TESTS)
   npk_test(sim_link_test)
   npk_test(udp_loopback_test)
   npk_test(handshake_test)
+  npk_test(channels_test)
 endif()

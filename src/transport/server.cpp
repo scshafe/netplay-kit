@@ -66,13 +66,17 @@ void Server::update(Micros now) {
     handle(from, {rx_.data(), *n});
   }
   for (auto it = peers_.begin(); it != peers_.end();) {
-    if (now_ - it->second.last_heard > cfg_.idle_timeout) {
-      auto next = std::next(it);
+    Peer& peer = it->second;
+    auto next = std::next(it);
+    if (peer.conn.failed()) {
+      peer.conn.send_close(now_, link_, peer.address, DisconnectReason::ProtocolError);
+      remove(it, DisconnectReason::ProtocolError);
+    } else if (now_ - peer.conn.last_heard() > cfg_.idle_timeout) {
       remove(it, DisconnectReason::Timeout);
-      it = next;
     } else {
-      ++it;
+      peer.conn.flush(now_, link_, peer.address);
     }
+    it = next;
   }
 }
 
@@ -125,7 +129,6 @@ void Server::handle_response(const Address& from, std::size_t request_size, cons
     auto peer = peers_.find(existing->second);
     if (peer->second.client_nonce == r.client_nonce) {
       id = peer->second.id;  // a repeated Response: our Accept was lost
-      peer->second.last_heard = now_;
     } else {
       remove(peer, DisconnectReason::Replaced);  // the client restarted
     }
@@ -136,7 +139,7 @@ void Server::handle_response(const Address& from, std::size_t request_size, cons
       return;
     }
     id = new_id();
-    peers_.emplace(id, Peer{id, from, r.client_nonce, now_});
+    peers_.emplace(id, Peer{id, from, r.client_nonce, Connection(id, cfg_.connection, now_)});
     by_address_[from] = id;
     events_.push_back({ServerEvent::Type::Connected, id, from});
   }
@@ -152,17 +155,9 @@ void Server::handle_data(const Address& from, const Packet& p) {
     ++stats_.unknown_connection;
     return;
   }
-  Peer& peer = it->second;
-  peer.last_heard = now_;
-  FrameReader r(p.body);
-  Frame f;
-  while (!r.done()) {
-    if (r.next(f) != ParseError::None) break;
-    if (f.kind == FrameKind::Close) {
-      remove(it, DisconnectReason::Closed);  // whatever the peer's reason, it left
-      return;
-    }
-  }
+  Connection& conn = it->second.conn;
+  conn.on_packet(p, now_);
+  if (conn.peer_closed()) remove(it, DisconnectReason::Closed);  // whatever its reason, it left
 }
 
 void Server::send_reply(const Address& to, const PacketBuilder& b, std::size_t request_size) {
@@ -173,16 +168,10 @@ void Server::send_reply(const Address& to, const PacketBuilder& b, std::size_t r
   link_.send(to, b.bytes());
 }
 
-void Server::send_close(const Peer& peer, DisconnectReason reason) {
-  Header h{PacketType::Data, peer.id};
-  PacketBuilder b(h);
-  b.add_close(static_cast<std::uint8_t>(reason));
-  link_.send(peer.address, b.bytes());
-}
-
 void Server::remove(std::unordered_map<ConnectionId, Peer>::iterator it, DisconnectReason reason) {
-  const Peer peer = it->second;
+  Peer peer = std::move(it->second);
   peers_.erase(it);
+  while (auto m = peer.conn.poll_message()) orphaned_.push_back({peer.id, std::move(*m)});
   by_address_.erase(peer.address);
   events_.push_back({ServerEvent::Type::Disconnected, peer.id, peer.address, reason});
 }
@@ -190,8 +179,39 @@ void Server::remove(std::unordered_map<ConnectionId, Peer>::iterator it, Disconn
 void Server::disconnect(ConnectionId id, DisconnectReason reason) {
   const auto it = peers_.find(id);
   if (it == peers_.end()) return;
-  send_close(it->second, reason);
+  it->second.conn.send_close(now_, link_, it->second.address, reason);
   remove(it, reason);
+}
+
+std::optional<ServerMessage> Server::poll_message() {
+  if (!orphaned_.empty()) {
+    ServerMessage m = std::move(orphaned_.front());
+    orphaned_.pop_front();
+    return m;
+  }
+  // Take turns between connections so a busy one cannot starve the others.
+  const std::size_t n = peers_.size();
+  auto it = peers_.begin();
+  for (std::size_t skipped = 0; skipped < n; ++skipped) {
+    const std::size_t index = (poll_cursor_ + skipped) % n;
+    it = peers_.begin();
+    std::advance(it, static_cast<std::ptrdiff_t>(index));
+    if (auto m = it->second.conn.poll_message()) {
+      poll_cursor_ = index + 1;
+      return ServerMessage{it->first, std::move(*m)};
+    }
+  }
+  return std::nullopt;
+}
+
+bool Server::send_unreliable(ConnectionId id, std::span<const std::uint8_t> data) {
+  const auto it = peers_.find(id);
+  return it != peers_.end() && it->second.conn.send_unreliable(data);
+}
+
+bool Server::send_reliable(ConnectionId id, std::span<const std::uint8_t> data) {
+  const auto it = peers_.find(id);
+  return it != peers_.end() && it->second.conn.send_reliable(data);
 }
 
 }  // namespace npk::transport

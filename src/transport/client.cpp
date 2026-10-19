@@ -18,7 +18,8 @@ void Client::connect(Micros now) {
   resent_init_ = false;
   handshake_rtt_.reset();
   id_ = 0;
-  started_ = now_ = last_heard_ = now;
+  conn_.reset();
+  started_ = now_ = now;
   send_current(now);
 }
 
@@ -49,9 +50,17 @@ void Client::update(Micros now) {
       if (!have_challenge_) resent_init_ = true;
       send_current(now);
     }
-  } else if (state_ == State::Connected && now - last_heard_ > cfg_.idle_timeout) {
-    state_ = State::Closed;
-    close_reason_ = DisconnectReason::Timeout;
+  } else if (state_ == State::Connected) {
+    if (conn_->failed()) {
+      conn_->send_close(now, link_, server_, DisconnectReason::ProtocolError);
+      state_ = State::Closed;
+      close_reason_ = DisconnectReason::ProtocolError;
+    } else if (now - conn_->last_heard() > cfg_.idle_timeout) {
+      state_ = State::Closed;
+      close_reason_ = DisconnectReason::Timeout;
+    } else {
+      conn_->flush(now, link_, server_);
+    }
   }
 }
 
@@ -80,23 +89,16 @@ void Client::handle(const Address& from, std::span<const std::uint8_t> datagram)
       id_ = p.header.connection;
       accept_server_time_ = a.server_time_us;
       accept_local_time_ = now_;
-      last_heard_ = now_;
+      conn_.emplace(id_, cfg_.connection, now_);
       state_ = State::Connected;
       break;
     }
     case PacketType::Data: {
       if (state_ != State::Connected || p.header.connection != id_) return;
-      last_heard_ = now_;
-      FrameReader r(p.body);
-      Frame f;
-      while (!r.done()) {
-        if (r.next(f) != ParseError::None) break;
-        if (f.kind == FrameKind::Close) {
-          state_ = State::Closed;
-          close_reason_ = f.close_reason <= 3 ? static_cast<DisconnectReason>(f.close_reason)
-                                              : DisconnectReason::Closed;
-          return;
-        }
+      conn_->on_packet(p, now_);
+      if (conn_->peer_closed()) {
+        state_ = State::Closed;
+        close_reason_ = conn_->peer_close_reason();
       }
       break;
     }
@@ -106,12 +108,20 @@ void Client::handle(const Address& from, std::span<const std::uint8_t> datagram)
 
 void Client::disconnect(DisconnectReason reason) {
   if (state_ == State::Connected) {
-    PacketBuilder b(Header{PacketType::Data, id_, send_seq_++});
-    b.add_close(static_cast<std::uint8_t>(reason));
-    link_.send(server_, b.bytes());
+    conn_->send_close(now_, link_, server_, reason);
     close_reason_ = DisconnectReason::Closed;
   }
   if (state_ == State::Connected || state_ == State::Connecting) state_ = State::Closed;
 }
+
+bool Client::send_unreliable(std::span<const std::uint8_t> data) {
+  return state_ == State::Connected && conn_->send_unreliable(data);
+}
+
+bool Client::send_reliable(std::span<const std::uint8_t> data) {
+  return state_ == State::Connected && conn_->send_reliable(data);
+}
+
+std::optional<Message> Client::poll_message() { return conn_ ? conn_->poll_message() : std::nullopt; }
 
 }  // namespace npk::transport
