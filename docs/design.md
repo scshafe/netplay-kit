@@ -48,6 +48,17 @@ non-blocking), never to a socket. `UdpSocket` is the POSIX implementation;
 and duplicate, a virtual clock and a seed, so transport and session tests are
 exact and repeatable. Time is always passed in (`Micros now`), never read.
 
+`Connection` (`connection.hpp`) is one established connection: packet sequence
+numbers with an ack and a 32-packet ack bitfield in every header, an unreliable
+channel (at most once, bounded queue, oldest dropped) and a reliable ordered
+channel (messages up to 64 KiB by default, cut into fragments, a 128-fragment
+window, resend on a round-trip-derived timeout with backoff or when three later
+packets were acked, delivery once and in order). A packet is validated whole
+before it is acked or applied, so an ack means every frame in it was taken, and
+a duplicate packet is dropped whole. Every buffer has a bound and a peer that
+breaks one is disconnected with `ProtocolError`. `Server` and `Client` own the
+connections: `send_unreliable`, `send_reliable`, `poll_message`.
+
 ## Network path (prove early)
 
 The scshafe runner lane puts each service on its own tailnet node. The node is

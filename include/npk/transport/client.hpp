@@ -5,6 +5,7 @@
 
 #include <optional>
 
+#include "npk/transport/connection.hpp"
 #include "npk/transport/link.hpp"
 #include "npk/transport/time.hpp"
 #include "npk/transport/types.hpp"
@@ -17,6 +18,7 @@ struct ClientConfig {
   Micros retry_interval = 250'000;      // resend the current handshake packet this often
   Micros handshake_timeout = 5'000'000;  // give up after this long
   Micros idle_timeout = 10'000'000;      // connected, but nothing heard this long
+  ConnectionConfig connection{};
 };
 
 class Client {
@@ -36,6 +38,14 @@ class Client {
   void update(Micros now);
   // Tells the server and closes.
   void disconnect(DisconnectReason reason = DisconnectReason::Closed);
+
+  // False when not connected, the message is too big, or (reliable) the buffer is full.
+  bool send_unreliable(std::span<const std::uint8_t> data);
+  bool send_reliable(std::span<const std::uint8_t> data);
+  // Round-trip estimate of the connection, if there is one.
+  std::optional<RttEstimator> rtt() const { return conn_ ? std::optional(conn_->rtt()) : std::nullopt; }
+  // Messages received, also after the connection closed, until taken.
+  std::optional<Message> poll_message();
 
   State state() const { return state_; }
   ConnectionId connection_id() const { return id_; }
@@ -59,14 +69,14 @@ class Client {
   std::uint64_t attempts_ = 0;
   bool have_challenge_ = false;
   ChallengeBody challenge_;
-  Micros started_ = 0, last_sent_ = 0, last_heard_ = 0, now_ = 0;
+  Micros started_ = 0, last_sent_ = 0, now_ = 0;
   bool resent_init_ = false;
   ConnectionId id_ = 0;
   DisconnectReason close_reason_ = DisconnectReason::Closed;
   std::optional<Micros> handshake_rtt_;
   std::uint64_t accept_server_time_ = 0;
   Micros accept_local_time_ = 0;
-  std::uint16_t send_seq_ = 0;
+  std::optional<Connection> conn_;
   std::array<std::uint8_t, kMaxDatagram + 1> rx_{};
 };
 

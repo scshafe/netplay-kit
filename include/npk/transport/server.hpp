@@ -17,6 +17,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include "npk/transport/connection.hpp"
 #include "npk/transport/link.hpp"
 #include "npk/transport/ratelimit.hpp"
 #include "npk/transport/siphash.hpp"
@@ -37,6 +38,7 @@ struct ServerConfig {
   double init_rate_total = 2000;
   double init_burst_total = 2000;
   std::size_t max_receive_per_update = 4096;
+  ConnectionConfig connection{};
 };
 
 struct ServerStats {
@@ -57,6 +59,11 @@ struct ServerEvent {
   DisconnectReason reason = DisconnectReason::Closed;  // Disconnected only
 };
 
+struct ServerMessage {
+  ConnectionId id;
+  Message message;
+};
+
 class Server {
  public:
   Server(Link& link, const ServerConfig& config = {});
@@ -67,12 +74,23 @@ class Server {
   // Reads what has arrived, answers it, and expires idle connections.
   void update(Micros now);
 
-  // Events must be polled; they queue until taken.
+  // Events and messages must be polled; they queue until taken. Messages that
+  // arrived before a connection ended are still delivered after its event.
   std::optional<ServerEvent> poll_event();
+  std::optional<ServerMessage> poll_message();
+
+  // False when the connection is unknown, the message is too big, or (reliable)
+  // the connection's send buffer is full.
+  bool send_unreliable(ConnectionId id, std::span<const std::uint8_t> data);
+  bool send_reliable(ConnectionId id, std::span<const std::uint8_t> data);
 
   // Ends a connection, telling the peer.
   void disconnect(ConnectionId id, DisconnectReason reason = DisconnectReason::Closed);
 
+  std::optional<RttEstimator> rtt(ConnectionId id) const {
+    const auto it = peers_.find(id);
+    return it == peers_.end() ? std::nullopt : std::optional(it->second.conn.rtt());
+  }
   std::size_t connection_count() const { return peers_.size(); }
   const ServerStats& stats() const { return stats_; }
 
@@ -81,8 +99,7 @@ class Server {
     ConnectionId id;
     Address address;
     std::uint64_t client_nonce;
-    Micros last_heard;
-    std::uint16_t send_seq = 0;
+    Connection conn;
   };
 
   void handle(const Address& from, std::span<const std::uint8_t> datagram);
@@ -90,7 +107,6 @@ class Server {
   void handle_response(const Address& from, std::size_t request_size, const Packet& p);
   void handle_data(const Address& from, const Packet& p);
   void send_reply(const Address& to, const PacketBuilder& b, std::size_t request_size);
-  void send_close(const Peer& peer, DisconnectReason reason);
   void remove(std::unordered_map<ConnectionId, Peer>::iterator it, DisconnectReason reason);
   std::uint32_t bucket_now() const;
   std::uint64_t cookie_for(const Address& a, std::uint64_t nonce, std::uint32_t bucket) const;
@@ -107,6 +123,8 @@ class Server {
   std::unordered_map<ConnectionId, Peer> peers_;
   std::unordered_map<Address, ConnectionId> by_address_;
   std::deque<ServerEvent> events_;
+  std::deque<ServerMessage> orphaned_;  // from connections that have ended
+  std::size_t poll_cursor_ = 0;
   ServerStats stats_;
   std::array<std::uint8_t, kMaxDatagram + 1> rx_{};
 };
