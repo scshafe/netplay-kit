@@ -74,6 +74,25 @@ The lobby is HTTP, so it fits the existing sidecar model as it is.
 - Rate-limit unauthenticated packets, and never amplify: a reply is never
   larger than the request before the handshake completes.
 
+How the transport does that (`server.hpp`):
+
+- Init and Response are padded to 128 bytes or more; smaller ones get no
+  reply. Challenge (36 bytes) and Accept (32) are smaller than any request
+  that can cause them, and `send_reply` refuses a reply larger than its request.
+- The server is stateless until a Response carries a valid cookie: SipHash-2-4
+  of the source address, the client's nonce and a 10-second time bucket under a
+  secret from the OS. A cookie is valid for its bucket and the next. Only then
+  does it allocate a connection (at most `max_connections`) and issue a
+  connection id derived with a keyed hash, so ids cannot be guessed.
+- Init, the one packet that costs a reply, is limited per source IP and in
+  total (token buckets in a fixed-size table, so memory does not grow with the
+  number of sources). A Response is checked before any limit, so a valid cookie
+  is never starved by a spoofer sending Inits from the client's address.
+- Data packets must carry a known connection id from that connection's address,
+  or they are dropped silently. There is no connection migration.
+- Not covered yet: confidentiality and integrity of game packets. An on-path
+  attacker can read, replay or inject; see the encryption note above.
+
 ## Dependencies
 
 Prefer the standard library and the OS socket API
