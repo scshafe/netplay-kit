@@ -91,6 +91,10 @@ class Server {
     const auto it = peers_.find(id);
     return it == peers_.end() ? std::nullopt : std::optional(it->second.conn.rtt());
   }
+  std::optional<ClockSync> clock(ConnectionId id) const {
+    const auto it = peers_.find(id);
+    return it == peers_.end() ? std::nullopt : std::optional(it->second.conn.clock());
+  }
   std::size_t connection_count() const { return peers_.size(); }
   const ServerStats& stats() const { return stats_; }
 

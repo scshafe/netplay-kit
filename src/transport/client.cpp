@@ -90,6 +90,10 @@ void Client::handle(const Address& from, std::span<const std::uint8_t> datagram)
       accept_server_time_ = a.server_time_us;
       accept_local_time_ = now_;
       conn_.emplace(id_, cfg_.connection, now_);
+      if (handshake_rtt_) {
+        // The Accept left the server at its time T and took about half the round trip.
+        conn_->add_clock_sample(*handshake_rtt_, static_cast<Micros>(a.server_time_us) + *handshake_rtt_ / 2 - now_);
+      }
       state_ = State::Connected;
       break;
     }

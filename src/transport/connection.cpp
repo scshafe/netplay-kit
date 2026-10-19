@@ -10,7 +10,7 @@ constexpr std::size_t kMaxQueuedMessages = 4096;  // reliable messages not yet c
 }  // namespace
 
 Connection::Connection(ConnectionId id, const ConnectionConfig& config, Micros now)
-    : id_(id), cfg_(config), last_heard_(now), last_sent_(now) {}
+    : id_(id), cfg_(config), next_ping_(now), last_heard_(now), last_sent_(now) {}
 
 // ---- packet numbers ---------------------------------------------------------
 
@@ -114,17 +114,17 @@ void Connection::fill_window() {
   }
 }
 
-bool Connection::fragment_due(const SendFragment& f, Micros now) const {
-  if (f.acked) return false;
-  if (f.sent_count == 0) return true;
+Connection::Due Connection::fragment_due(const SendFragment& f, Micros now) const {
+  if (f.acked) return Due::No;
+  if (f.sent_count == 0) return Due::Now;
   // Lost, by the look of it: packets sent three or more after its carrier got through.
   if (have_largest_acked_ && seq_newer(largest_acked_, f.packet_seq) &&
       static_cast<std::uint16_t>(largest_acked_ - f.packet_seq) >= 3) {
-    return true;
+    return Due::Now;
   }
   const std::uint32_t shift = std::min<std::uint32_t>(f.sent_count - 1, 4);
   const Micros timeout = std::min(rtt_.rto() << shift, rtt_.max_rto());
-  return now - f.last_sent >= timeout;
+  return now - f.last_sent >= timeout ? Due::Probe : Due::No;
 }
 
 Header Connection::next_header() {
@@ -149,8 +149,36 @@ void Connection::flush(Micros now, Link& link, const Address& to) {
     PacketBuilder b(next_header());
     std::vector<std::uint16_t> carried;
     bool full = false;
+    bool control = false;
+    if (first) {
+      for (std::size_t k = 0; k < kMaxPongsPerFlush && !pending_pongs_.empty(); ++k) {
+        const PendingPong pp = pending_pongs_.front();
+        pending_pongs_.pop_front();
+        // t3 is stamped now; the peer subtracts the time we held its ping.
+        b.add_pong(pp.id, pp.t1, static_cast<std::uint64_t>(pp.received), static_cast<std::uint64_t>(now));
+        control = true;
+      }
+      pending_pongs_.clear();  // the rest is stale by the next flush
+      if (now >= next_ping_) {
+        PingRecord& rec = pings_[next_ping_id_ % pings_.size()];
+        rec = {true, next_ping_id_, now};
+        b.add_ping(next_ping_id_, static_cast<std::uint64_t>(now));
+        ++next_ping_id_;
+        ++stats_.pings_sent;
+        next_ping_ = now + (pings_started_++ < cfg_.warmup_pings ? cfg_.warmup_interval : cfg_.ping_interval);
+        control = true;
+      }
+    }
+    std::size_t unacked_before = 0;  // fragments ahead of this one still waiting for an ack
     for (SendFragment& f : window_) {
-      if (!fragment_due(f, now)) continue;
+      if (f.acked) continue;
+      const Due due = fragment_due(f, now);
+      const std::size_t ahead = unacked_before++;
+      if (due == Due::No) continue;
+      // A timeout alone says little (the path may be dead): only the oldest few
+      // fragments are resent for it. The ack that comes back lets the loss rule
+      // resend the rest.
+      if (due == Due::Probe && ahead >= kProbeFragments) continue;
       if (!b.add_reliable(f.seq, f.flags, f.data)) {
         full = true;
         break;
@@ -170,7 +198,7 @@ void Connection::flush(Micros now, Link& link, const Address& to) {
       unreliable_out_.pop_front();
       unreliable = true;
     }
-    const bool asks_for_ack = !carried.empty() || unreliable;
+    const bool asks_for_ack = !carried.empty() || unreliable || control;
     const bool ack_only = first && ack_pending_;
     const bool keepalive = first && now - last_sent_ >= cfg_.keepalive_interval;
     if (!asks_for_ack && !ack_only && !keepalive) break;
@@ -240,10 +268,37 @@ bool Connection::on_packet(const Packet& p, Micros now) {
                                  ? static_cast<DisconnectReason>(f.close_reason)
                                  : DisconnectReason::Closed;
         break;
-      default: break;  // Ping and Pong: not handled yet
+      case FrameKind::Ping:
+        if (pending_pongs_.size() < kMaxPongsPerFlush) {
+          pending_pongs_.push_back({f.ping_id, f.t1, now});
+        } else {
+          ++stats_.pings_unanswered;
+        }
+        break;
+      case FrameKind::Pong: accept_pong(f, now); break;
     }
   }
   return true;
+}
+
+void Connection::accept_pong(const Frame& f, Micros now) {
+  PingRecord& rec = pings_[f.ping_id % pings_.size()];
+  const Micros t1 = static_cast<Micros>(f.t1), t2 = static_cast<Micros>(f.t2), t3 = static_cast<Micros>(f.t3);
+  // Only a ping we sent, answered once, with our own timestamp echoed back.
+  if (!rec.valid || rec.id != f.ping_id || rec.sent != t1 || t3 < t2) {
+    ++stats_.pongs_rejected;
+    return;
+  }
+  rec.valid = false;
+  const Micros held = t3 - t2;
+  const Micros rtt = (now - t1) - held;
+  constexpr Micros kMaxRtt = 60'000'000;
+  if (rtt < 0 || rtt > kMaxRtt) {
+    ++stats_.pongs_rejected;
+    return;
+  }
+  clock_.add(rtt, ((t2 - t1) + (t3 - now)) / 2);
+  ++stats_.pongs_accepted;
 }
 
 void Connection::accept_fragment(const Frame& f) {

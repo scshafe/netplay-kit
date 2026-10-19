@@ -59,6 +59,20 @@ a duplicate packet is dropped whole. Every buffer has a bound and a peer that
 breaks one is disconnected with `ProtocolError`. `Server` and `Client` own the
 connections: `send_unreliable`, `send_reliable`, `poll_message`.
 
+Round trip and clock offset (`clock_sync.hpp`): each end pings the other (eight
+pings 50 ms apart after connecting, then one a second). A pong carries the
+pinger's send time and the responder's receive and send times, so the
+responder's holding time is removed from the round trip, and the clock offset
+(peer clock minus local) comes out of the four timestamps. The offset is taken
+from the lowest-round-trip sample of the last 16, which bounds its error by half
+that sample's queueing excess; it cannot see an unequal split between the two
+directions (10 ms up, 40 ms down reads as 15 ms of offset). The handshake
+supplies a first sample. Pings are answered at most four per flush, so a packet
+of pings cannot draw out a bigger reply, and a pong is only accepted for a ping
+that was sent and not yet answered, with its own timestamp echoed. The session
+layer reads `clock()` (smoothed `rtt()`, `min_rtt()`, `jitter()`, `offset()`);
+the retransmission timer keeps its own estimate from acks.
+
 ## Network path (prove early)
 
 The scshafe runner lane puts each service on its own tailnet node. The node is

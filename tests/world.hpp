@@ -43,7 +43,7 @@ struct World {
 
   void step(Micros tick = 1000) {
     if (!clients_silent) {
-      for (auto& c : clients) c.client->update(net.now());
+      for (auto& c : clients) c.client->update(net.now() + client_skew);
     }
     server->update(net.now());
     while (auto e = server->poll_event()) events.push_back(*e);
@@ -63,6 +63,8 @@ struct World {
     return n;
   }
 
+  // The clients' clocks run this far ahead of the server's (and the network's).
+  Micros client_skew = 0;
   bool clients_silent = false;  // the clients are not run, so they send nothing
   SimNetwork net;
   std::unique_ptr<SimLink> server_link;
