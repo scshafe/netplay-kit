@@ -73,6 +73,55 @@ that was sent and not yet answered, with its own timestamp echoed. The session
 layer reads `clock()` (smoothed `rtt()`, `min_rtt()`, `jitter()`, `offset()`);
 the retransmission timer keeps its own estimate from acks.
 
+## Session layer (`npk::session`)
+
+A game plugs in by implementing `Simulation` (`simulation.hpp`): `step(frame,
+inputs)`, `snapshot`, `restore`, `hash`, a fixed `input_size()`, and optionally
+`valid_input`, `neutral_input` and `predict_input`. Inputs are opaque bytes of
+the game's own encoding, which keeps every length in the protocol bounded and
+lets the server check them without knowing the game. The simulation must be
+deterministic (the header says what that rules out). "The state at frame f" is
+the state before `step(f, ...)`.
+
+`Rollback` (`rollback.hpp`) is the client-side core and knows nothing of the
+network. It simulates ahead, using the local player's *provisional* input and,
+for everyone else, a prediction (the previous input again by default). A
+*canonical* input arrives from the server for each player and frame; when one
+differs from what was simulated, the state is restored from the snapshot at
+that frame and the frames since are simulated again. A frame is *confirmed*
+once simulated with canonical inputs only. Bounds: at most `max_rollback` (16)
+frames past the confirmed ones, which is also the deepest possible rollback and
+the number of snapshots held; inputs are accepted only for the `window` (64)
+frames from the confirmed one; wrong sizes, invalid inputs and out-of-window
+frames are refused and counted; a repeated canonical frame is ignored (the
+first wins). Every `hash_interval` (30) frames, when the state at that frame
+becomes confirmed, a *checkpoint* (frame, hash) is queued for the session to
+report. `resync(frame, snapshot)` adopts the server's state at a frame.
+
+**Who does what.** The server embeds the game's simulation through the same
+interface (decided; see the Parts table). It collects each player's input for a
+frame and finalises the canonical inputs of frame F when all have arrived or
+when its clock passes the frame's start plus a grace period; a missing input
+becomes the player's previous canonical one and a late one is dropped. It steps
+its own simulation with the canonical inputs, keeps its hash at every
+checkpoint, and compares the hashes clients report. A client that disagrees at
+a checkpoint is sent the server's newest checkpoint state (a reliable message),
+which it adopts with `resync`; the server's state wins. A client asks for
+canonical frames from `next_canonical_needed()` on, so what a resync dropped is
+sent again.
+
+**Input delay** (`input_delay.hpp`; decided with the owner session). Frames of
+delay = ceil((smoothed RTT / 2 + k * jitter) / frame time), with k = 2, jitter
+the mean deviation of the round trip, clamped to 1..6 frames at 60 Hz. It is
+set when the match starts and re-evaluated about twice a second at a safe
+point: a frame boundary outside any resimulation (never in the middle of a
+rollback). It changes only with hysteresis: a raise needs three evaluations in
+a row that want one, then goes to the target; a drop needs three and also 60
+frames without a rollback, and goes down one frame at a time. The delay is a
+client-side labelling choice (an input sampled at wall frame W is labelled
+W + delay), so the server and the canonical stream do not depend on it. Rollback
+covers what the delay does not.
+
 ## Network path (prove early)
 
 The scshafe runner lane puts each service on its own tailnet node. The node is
@@ -141,7 +190,9 @@ netplay-kit itself ships an example game and a compose file for local runs.
    lossy-link simulator (drop, delay, jitter, reorder) in tests.
 2. The `Simulation` interface and the rollback session, tested with a toy
    deterministic game and the lossy-link simulator. Clients must converge to
-   identical hashes.
+   identical hashes. In three steps: the rollback core and the delay rule (done);
+   the session messages and the server and client sessions over the transport;
+   hash checks, resync and hostile-input tests.
 3. The game server and lobby executables, plus Docker images.
 4. **The UDP-over-tailnet proof** on the PC (with the owner session).
 5. The home page.

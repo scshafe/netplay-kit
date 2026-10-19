@@ -20,6 +20,8 @@ endif()
 
 add_library(netplay_kit
   src/version.cpp
+  src/session/rollback.cpp
+  src/session/simulation.cpp
   src/transport/address.cpp
   src/transport/client.cpp
   src/transport/connection.cpp
@@ -64,6 +66,8 @@ if(NPK_BUILD_TESTS)
   npk_test(handshake_test)
   npk_test(channels_test)
   npk_test(clock_sync_test)
+  npk_test(rollback_test)
+  npk_test(input_delay_test)
 
   add_test(NAME echo_loopback COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/echo_loopback.sh $<TARGET_FILE:npk_echo>)
 endif()
