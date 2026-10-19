@@ -1,0 +1,8 @@
+/build/
+/.build/
+/out/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+compile_commands.json

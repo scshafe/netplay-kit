@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# The repository's one verify command (dev.toml [verify]): configure, build
+# and run every test with CMake and CTest. CI runs the same command.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
