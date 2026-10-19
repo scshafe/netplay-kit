@@ -44,7 +44,7 @@ void ClientSession::end(transport::DisconnectReason why) {
 void ClientSession::on_start(const msg::Start& s) {
   if (state_ != State::Waiting) return;  // a second Start is ignored
   if (s.players != sim_.player_count() || s.input_size != in_size_ || s.player >= s.players ||
-      s.tick_rate < 10 || s.tick_rate > 240) {
+      s.tick_rate < 10 || s.tick_rate > 240 || s.hash_interval != cfg_.rollback.hash_interval) {
     end(transport::DisconnectReason::ProtocolError);
     return;
   }
@@ -81,6 +81,24 @@ void ClientSession::on_frames(const msg::Frames& f) {
   }
 }
 
+void ClientSession::on_resync(const transport::Message& m) {
+  msg::Resync r;
+  if (m.channel != transport::Channel::Reliable || state_ != State::Running ||
+      !msg::decode_resync(m.data, cfg_.transport.connection.max_message_size, r)) {
+    ++stats_.messages_malformed;
+    end(transport::DisconnectReason::ProtocolError);
+    return;
+  }
+  // Not from the past (further back than the window) or the far future.
+  const std::int64_t window = static_cast<std::int64_t>(rb_.window_end() - rb_.confirmed());
+  if (static_cast<std::int64_t>(r.frame) + window < rb_.confirmed() ||
+      static_cast<std::int64_t>(r.frame) > wall_hint_ + window || !rb_.resync(r.frame, r.snapshot)) {
+    end(transport::DisconnectReason::ProtocolError);
+    return;
+  }
+  ++stats_.resyncs;
+}
+
 void ClientSession::on_message(const transport::Message& m) {
   const auto type = msg::type_of(m.data);
   if (type == msg::Type::Start && m.channel == transport::Channel::Reliable) {
@@ -92,6 +110,8 @@ void ClientSession::on_message(const transport::Message& m) {
     if (state_ != State::Running) return;
     if (msg::decode_frames(m.data, sim_.player_count() * in_size_, f)) on_frames(f);
     else ++stats_.messages_malformed;
+  } else if (type == msg::Type::Resync) {
+    on_resync(m);
   } else {
     ++stats_.messages_malformed;
   }
@@ -102,6 +122,8 @@ void ClientSession::label_inputs(Frame wall) {
   const std::int64_t target = static_cast<std::int64_t>(wall) + d;
   source_(wall, cur_input_);
   if (!sim_.valid_input(cur_input_)) sim_.neutral_input(cur_input_);
+  // After a long stall or a resync the confirmed frames are already past the last label.
+  if (last_label_ + 1 < static_cast<std::int64_t>(rb_.confirmed())) last_label_ = static_cast<std::int64_t>(rb_.confirmed()) - 1;
   // Raising the delay leaves frames without an input: they repeat the last one.
   // Lowering it makes a frame come up twice: the first label stands.
   while (last_label_ < target) {
@@ -129,6 +151,12 @@ void ClientSession::send_inputs() {
 void ClientSession::update(Micros now) {
   if (state_ == State::Idle || state_ == State::Ended) return;
   client_.update(now);
+  // Where "now" is on the server's frame clock, for checking what the server sends.
+  wall_hint_ = -1;
+  if (state_ == State::Running) {
+    if (const auto c = client_.clock(); c && c->to_peer(now) >= start_time_)
+      wall_hint_ = (c->to_peer(now) - start_time_) * tick_rate_ / 1'000'000;
+  }
   while (auto m = client_.poll_message()) on_message(*m);
   switch (client_.state()) {
     case transport::Client::State::Connected:
@@ -171,6 +199,8 @@ void ClientSession::update(Micros now) {
   while (auto c = rb_.take_checkpoint()) {
     if (checkpoint_log_.size() >= cfg_.checkpoint_log) checkpoint_log_.pop_front();
     checkpoint_log_.push_back(*c);
+    msg::encode_hash({.frame = c->frame, .hash = c->hash}, out_);
+    client_.send_reliable(out_);
   }
   if (!rb_.ok()) end(transport::DisconnectReason::ProtocolError);
 }

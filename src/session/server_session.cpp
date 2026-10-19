@@ -73,6 +73,9 @@ void ServerSession::on_connected(const transport::ServerEvent& e, Micros) {
       s.ack = s.sent_to = 0;
       s.last_send = 0;
       s.bad = 0;
+      s.desyncs = 0;
+      s.resync_frame = 0;
+      s.resynced = false;
       std::fill(s.pending_has.begin(), s.pending_has.end(), 0);
       return;
     }
@@ -104,6 +107,7 @@ void ServerSession::start(Micros now) {
                   .players = static_cast<std::uint8_t>(players_),
                   .input_size = static_cast<std::uint8_t>(in_size_),
                   .tick_rate = static_cast<std::uint16_t>(cfg_.tick_rate_hz),
+                  .hash_interval = static_cast<std::uint16_t>(cfg_.hash_interval),
                   .start_time = static_cast<std::uint64_t>(start_time_)};
     msg::encode_start(st, out_);
     server_.send_reliable(seats_[i].id, out_);
@@ -121,7 +125,14 @@ void ServerSession::on_message(const transport::ServerMessage& m) {
     if (s.connected && s.id == m.id) seat = &s;
   }
   if (!seat || state_ != State::Running) return;
-  if (m.message.channel != transport::Channel::Unreliable || msg::type_of(m.message.data) != msg::Type::Inputs) {
+  const auto type = msg::type_of(m.message.data);
+  if (type == msg::Type::Hash && m.message.channel == transport::Channel::Reliable) {
+    msg::Hash h;
+    if (msg::decode_hash(m.message.data, h)) on_hash(*seat, h);
+    else { ++stats_.messages_malformed; count_bad(*seat); }
+    return;
+  }
+  if (type != msg::Type::Inputs || m.message.channel != transport::Channel::Unreliable) {
     ++stats_.messages_malformed;
     count_bad(*seat);
     return;
@@ -179,8 +190,54 @@ void ServerSession::finalise(Micros now) {
               history_.begin() + static_cast<std::ptrdiff_t>((f % cfg_.history) * frame_bytes_));
     sim_.step(f, frame);
     ++next_final_;
+    record_checkpoint();
     if (cfg_.on_canonical) cfg_.on_canonical(f, frame);
   }
+}
+
+void ServerSession::record_checkpoint() {
+  if (cfg_.hash_interval == 0 || next_final_ % cfg_.hash_interval != 0) return;
+  if (checkpoints_.size() >= kCheckpoints) checkpoints_.pop_front();
+  CheckpointRec& c = checkpoints_.emplace_back();
+  c.frame = next_final_;
+  c.hash = sim_.hash();
+  sim_.snapshot(c.snapshot);
+}
+
+void ServerSession::on_hash(Seat& s, const msg::Hash& h) {
+  if (s.resynced && h.frame < s.resync_frame) return;  // from before the state transfer
+  const auto it = std::find_if(checkpoints_.begin(), checkpoints_.end(),
+                               [&](const CheckpointRec& c) { return c.frame == h.frame; });
+  if (it == checkpoints_.end()) {
+    ++stats_.hash_unknown;
+    return;
+  }
+  ++stats_.hash_checked;
+  if (it->hash == h.hash) return;
+  ++stats_.desyncs;
+  resync(s, true);
+}
+
+// Sends the newest checkpoint state; the server's state wins. `desync` repairs
+// count against the client, a catch-up for one that fell too far behind does not.
+void ServerSession::resync(Seat& s, bool desync) {
+  if (!s.connected || checkpoints_.empty()) return;
+  if (desync && s.desyncs >= cfg_.max_resyncs) {
+    drop(s, transport::DisconnectReason::ProtocolError);
+    return;
+  }
+  const CheckpointRec& c = checkpoints_.back();
+  if (s.resynced && s.resync_frame == c.frame) return;  // already sent; wait for it to take effect
+  msg::encode_resync(c.frame, c.snapshot, out_);
+  if (out_.size() > cfg_.transport.connection.max_message_size) {
+    drop(s, transport::DisconnectReason::ProtocolError);  // the state does not fit a message
+    return;
+  }
+  if (!server_.send_reliable(s.id, out_)) return;
+  s.resynced = true;
+  s.resync_frame = c.frame;
+  s.desyncs += desync;
+  ++stats_.resyncs_sent;
 }
 
 void ServerSession::send_frames(Micros now) {
@@ -188,9 +245,12 @@ void ServerSession::send_frames(Micros now) {
   const std::size_t per_msg = std::min<std::size_t>(msg::kMaxFramesBytes / frame_bytes_, 255);
   for (Seat& s : seats_) {
     if (!s.connected || s.ack >= next_final_) continue;
+    if (next_final_ > cfg_.history && s.ack < next_final_ - cfg_.history) {
+      resync(s, false);  // too far behind for the frames to be sent again
+      continue;
+    }
     if (s.sent_to == next_final_ && now - s.last_send < frame_us) continue;
-    Frame first = s.ack;
-    if (next_final_ > cfg_.history && first < next_final_ - cfg_.history) first = next_final_ - cfg_.history;
+    const Frame first = s.ack;
     const std::size_t count = std::min<std::size_t>(next_final_ - first, per_msg);
     std::vector<std::uint8_t> data;
     data.reserve(count * frame_bytes_);

@@ -130,8 +130,26 @@ plays neutral input, and an input for a finalised frame is dropped. The first
 input received for a frame wins. A client that sends too many malformed or
 invalid messages is dropped; a game with more than 16 players, inputs over 255
 bytes or more than 1100 bytes of input per frame is refused. A client that
-arrives when the seats are full is closed. Reliable control messages (`Hash`,
-`Resync`) carry the desync check, below.
+arrives when the seats are full is closed.
+
+**Desync detection and repair.** Every `hash_interval` (30) frames, when the
+state at that frame becomes confirmed, a client sends the server a reliable
+`Hash` (frame, hash); `Start` carries the interval and a client with another
+one refuses to play, so a misconfiguration is loud. The server keeps its own
+hash and snapshot at the last eight checkpoints and compares. On a mismatch it
+sends that client a reliable `Resync` with its newest checkpoint state, which
+the client adopts (`Rollback::resync`) and plays on from, asking again for the
+canonical frames it needs. Hashes for frames older than the one sent are stale
+and ignored. The server's state wins always; a client that needs more than
+`max_resyncs` (5) repairs is dropped, since it cannot stay in step. The same
+state transfer catches up a client that fell further behind than the server
+keeps canonical frames (256, about four seconds): it does not count against the
+client. The client checks what it is sent: a `Resync` must come on the reliable
+channel, fit the message bound, be restorable, and name a frame near the
+clock; a `Start` must match its game; a canonical input the game rejects ends
+the session. A snapshot must fit one reliable message (64 KiB by default,
+`ConnectionConfig::max_message_size`), or the state cannot be repaired and the
+client is dropped.
 
 **Input delay** (`input_delay.hpp`; decided with the owner session). Frames of
 delay = ceil((smoothed RTT / 2 + k * jitter) / frame time), with k = 2, jitter

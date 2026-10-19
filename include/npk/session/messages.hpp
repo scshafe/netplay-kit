@@ -13,7 +13,7 @@
 //           canonical inputs of frames first .. first+count-1
 // Reliable (control, rare):
 //   Start   server -> client  type u8 | player u8 | players u8 | input_size u8 |
-//                             tick_rate u16 | start_time u64
+//                             tick_rate u16 | hash_interval u16 | start_time u64
 //           frame 0 begins at start_time on the server's clock
 //   Hash    client -> server  type u8 | frame u32 | hash u64     (a checkpoint)
 //   Resync  server -> client  type u8 | frame u32 | snapshot...  (the server's state at frame)
@@ -72,6 +72,7 @@ bool decode_frames(std::span<const std::uint8_t> m, std::size_t frame_bytes, Fra
 struct Start {
   std::uint8_t player = 0, players = 0, input_size = 0;
   std::uint16_t tick_rate = 0;
+  std::uint16_t hash_interval = 0;  // frames between checkpoints; 0: none
   std::uint64_t start_time = 0;
 };
 void encode_start(const Start& s, std::vector<std::uint8_t>& out);

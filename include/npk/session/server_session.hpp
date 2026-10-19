@@ -14,6 +14,7 @@
 // client, redundantly until acknowledged, and step the server's own simulation,
 // which is the authority on what happened.
 
+#include <deque>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -31,6 +32,8 @@ struct ServerSessionConfig {
   Frame grace_frames = 2;                   // how long past a frame's start a missing input is awaited
   Frame max_lead_frames = 8;                // frames finalised ahead of the clock, at most
   Frame history = 256;                      // canonical frames kept for re-sending; > the client window
+  Frame hash_interval = 30;                 // must equal the clients' Rollback hash_interval; told to them in Start
+  std::size_t max_resyncs = 5;              // desync repairs for one client before it is dropped
   std::size_t malformed_limit = 100;        // malformed or invalid messages before a client is dropped
   // Called with each frame's canonical inputs as it is finalised, in order.
   std::function<void(Frame, std::span<const std::uint8_t>)> on_canonical;
@@ -43,7 +46,11 @@ struct ServerSessionStats {
   std::uint64_t inputs_invalid = 0;    // refused by Simulation::valid_input
   std::uint64_t messages_malformed = 0;
   std::uint64_t frames_missing = 0;    // player-frames finalised without the player's input
-  std::uint64_t clients_dropped = 0;   // for sending too many bad messages
+  std::uint64_t clients_dropped = 0;   // for too many bad messages, or a desync that would not stay repaired
+  std::uint64_t hash_checked = 0;      // client checkpoints compared with the server's
+  std::uint64_t hash_unknown = 0;      // reported for a frame the server holds no checkpoint for
+  std::uint64_t desyncs = 0;           // reported hashes that differ from the server's
+  std::uint64_t resyncs_sent = 0;      // state transfers: after a desync, or to a client too far behind
 };
 
 class ServerSession {
@@ -73,6 +80,9 @@ class ServerSession {
     Frame sent_to = 0;           // next_final_ at the last send
     transport::Micros last_send = 0;
     std::size_t bad = 0;
+    std::size_t desyncs = 0;     // repairs so far
+    Frame resync_frame = 0;      // the checkpoint last sent; hashes for earlier frames are stale
+    bool resynced = false;
     std::vector<std::uint8_t> pending;  // kPending * input_size
     std::vector<Frame> pending_tag;     // which frame a slot holds
     std::vector<std::uint8_t> pending_has;
@@ -89,6 +99,16 @@ class ServerSession {
   transport::Micros frame_start(Frame f) const;
   std::int64_t wall_frame(transport::Micros now) const;
   void count_bad(Seat& s);
+  void on_hash(Seat& s, const msg::Hash& h);
+  void resync(Seat& s, bool desync);
+  void record_checkpoint();
+
+  struct CheckpointRec {
+    Frame frame;
+    std::uint64_t hash;
+    std::vector<std::uint8_t> snapshot;
+  };
+  static constexpr std::size_t kCheckpoints = 8;
 
   ServerSessionConfig cfg_;
   Simulation& sim_;
@@ -101,6 +121,7 @@ class ServerSession {
   std::vector<std::uint8_t> previous_;  // last canonical frame
   std::vector<std::uint8_t> history_;   // cfg.history * frame_bytes
   std::vector<std::uint8_t> out_;
+  std::deque<CheckpointRec> checkpoints_;
   ServerSessionStats stats_;
 };
 
