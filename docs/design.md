@@ -14,7 +14,7 @@ record in `docs/decisions/`.
 | `npk-lobby` | container | HTTP + JSON (and a push channel, such as WebSocket or long-poll): rooms, seats, ready and start, and handing a room to a game server |
 | Home page | served by the lobby | A small static site: the game, a download link for the macOS app, how to join |
 
-## Netcode model (decide first; record it)
+## Netcode model (decided: `docs/decisions/0001-netcode-model.md`)
 
 The proposal for a deterministic engine such as fighter-physics: **input-based
 rollback with an authoritative relay server**.
@@ -26,9 +26,15 @@ rollback with an authoritative relay server**.
 - Clients predict, then roll back and re-simulate on correction.
 - Periodic state hashes catch desyncs; the server's state wins on a resync.
 
-Record the alternative considered: server-authoritative snapshots with client
-prediction, like FPS netcode. It costs more bandwidth and loses determinism's
-advantage, but tolerates a non-deterministic simulation.
+The alternative, server-authoritative snapshots with client prediction (FPS
+style), costs more bandwidth and loses determinism's advantage, but tolerates a
+non-deterministic simulation. The record explains why it was not chosen.
+
+## Packet size
+
+A datagram is at most 1200 bytes of UDP payload. With IPv6 (40) and UDP (8)
+headers that is 1248 bytes on the wire, under the tailnet's 1280-byte MTU, so
+no packet is fragmented by IP.
 
 ## Network path (prove early)
 
@@ -58,7 +64,8 @@ The lobby is HTTP, so it fits the existing sidecar model as it is.
 
 ## Dependencies
 
-Prefer the standard library and the OS socket API. Any third-party library
+Prefer the standard library and the OS socket API
+(`docs/decisions/0002-dependencies.md`). Any third-party library
 (an HTTP server, JSON, crypto) needs a decision record, a pinned version, and
 a licence compatible with MIT.
 
