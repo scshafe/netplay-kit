@@ -20,11 +20,13 @@ endif()
 
 add_library(netplay_kit
   src/version.cpp
+  src/gameserver/game_server.cpp
   src/http/client.cpp
   src/http/http.cpp
   src/http/server.cpp
   src/json/json.cpp
   src/session/client_session.cpp
+  src/session/match.cpp
   src/session/messages.cpp
   src/session/rollback.cpp
   src/session/server_session.cpp
@@ -81,6 +83,7 @@ if(NPK_BUILD_TESTS)
   npk_test(json_test)
   npk_test(http_parse_test)
   npk_test(http_test)
+  npk_test(gameserver_test)
 
   add_test(NAME echo_loopback COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/echo_loopback.sh $<TARGET_FILE:npk_echo>)
 endif()

@@ -37,7 +37,7 @@ struct Match {
     server_addr = Address::v4(10, 0, 0, 1, 7000);
     server_link = net.make_link(server_addr);
     if (sc.transport.seed == 0) sc.transport.seed = seed * 31 + 7;
-    sc.on_canonical = [this](Frame, std::span<const std::uint8_t> in) {
+    sc.match.on_canonical = [this](Frame, std::span<const std::uint8_t> in) {
       canonical.insert(canonical.end(), in.begin(), in.end());
     };
     server = std::make_unique<session::ServerSession>(*server_link, server_game, sc);

@@ -56,6 +56,34 @@ void round_trips() {
   }
 }
 
+void join_message() {
+  std::vector<std::uint8_t> m;
+  msg::Join j;
+  j.room = "room-7_A";
+  for (std::size_t i = 0; i < j.token.size(); ++i) j.token[i] = static_cast<std::uint8_t>(i * 17);
+  msg::encode_join(j, m);
+  CHECK(msg::type_of(m) == msg::Type::Join && m.size() == 2 + 8 + 16);
+  msg::Join d;
+  CHECK(msg::decode_join(m, d) && d.room == j.room && d.token == j.token);
+  CHECK(!msg::decode_join(std::span(m).first(m.size() - 1), d));  // short
+  auto longer = m;
+  longer.push_back(0);
+  CHECK(!msg::decode_join(longer, d));
+  auto badchar = m;
+  badchar[3] = '/';
+  CHECK(!msg::decode_join(badchar, d));
+  badchar[3] = 0;
+  CHECK(!msg::decode_join(badchar, d));
+  j.room = std::string(33, 'a');
+  msg::encode_join(j, m);
+  CHECK(!msg::decode_join(m, d));
+  j.room = "";
+  msg::encode_join(j, m);
+  CHECK(!msg::decode_join(m, d));
+  CHECK(msg::valid_room_id("a") && msg::valid_room_id(std::string(32, 'z')) && !msg::valid_room_id("a b") &&
+        !msg::valid_room_id("") && !msg::valid_room_id("ü"));
+}
+
 void bounds() {
   std::vector<std::uint8_t> m;
   msg::Inputs in;
@@ -112,6 +140,8 @@ void decode_all(std::span<const std::uint8_t> m, Fn&& inside) {
   (void)msg::decode_hash(m, d);
   msg::Resync e;
   if (msg::decode_resync(m, 4096, e)) inside(e.snapshot, e.snapshot.size());
+  msg::Join g;
+  if (msg::decode_join(m, g)) inside(std::span<const std::uint8_t>(g.token), msg::kTokenSize);
   (void)msg::type_of(m);
 }
 
@@ -125,12 +155,13 @@ void garbage() {
     decode_all(m, inside);
   }
   // Valid messages, cut at every length and with every single byte changed.
-  std::vector<std::vector<std::uint8_t>> valid(5);
+  std::vector<std::vector<std::uint8_t>> valid(6);
   msg::encode_inputs(5, 6, 4, bytes(8), valid[0]);
   msg::encode_frames(5, 3, bytes(24), valid[1]);
   msg::encode_start({.player = 1, .players = 2, .input_size = 2, .tick_rate = 60, .start_time = 5}, valid[2]);
   msg::encode_hash({.frame = 30, .hash = 5}, valid[3]);
   msg::encode_resync(30, bytes(50), valid[4]);
+  msg::encode_join({.room = "r1", .token = {}}, valid[5]);
   for (const auto& v : valid) {
     for (std::size_t cut = 0; cut <= v.size(); ++cut) decode_all(std::span(v).first(cut), inside);
     for (std::size_t at = 0; at < v.size(); ++at) {
@@ -147,6 +178,7 @@ void garbage() {
 
 int main() {
   round_trips();
+  join_message();
   bounds();
   garbage();
   std::puts("messages_test: ok");

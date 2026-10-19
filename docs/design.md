@@ -190,8 +190,23 @@ Decided in `docs/decisions/0003-room-handoff.md` and `0004-http-and-json.md`.
   server as the example and for the compose file. `Simulation` gains an optional
   `finished()` and `result_json()`.
 
+**As built** (`npk/session/match.hpp`, `npk/gameserver/game_server.hpp`). `Match`
+is the server side of one match with no network of its own (it sends through a
+`MatchIo`); `ServerSession` hosts one match with seats by arrival, `GameServer`
+hosts many. The control API: `POST /rooms` (`room_id`, `seats` with 32-hex
+`token`s, `options` passed to the game's factory), `DELETE /rooms/<id>`, `GET
+/status`; 401 without the secret, 400 for anything malformed, 409 `full` or
+`exists`. A client's first reliable message is `Join` (room id, token); the token
+is compared against every seat of the room in constant time, a seat is taken once
+at a time, and three failures or five seconds of silence close the connection.
+A match ends when the game says it is `finished()` (it keeps sending until the
+clients have the last frames), when everyone has left, when not everyone joined
+in `join_timeout`, or after `max_duration`; the result (`outcome`, `frames`,
+`joined`, and the game's `result_json()`) is posted to the lobby and retried for a
+minute. Joining a match that has started is not supported yet.
+
 Planned PRs: in-tree JSON; HTTP server and client; matches hosted in rooms
-with tokens, and the game server; the lobby; the executables, images and a
+with tokens, and the game server (done); the lobby; the executables, images and a
 compose file with an end-to-end test.
 
 ## Network path (measured)

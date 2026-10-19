@@ -33,6 +33,9 @@ struct ClientSessionConfig {
   std::size_t max_steps_per_update = 4;
   transport::Micros delay_eval_interval = 500'000;
   std::size_t checkpoint_log = 64;  // checkpoints kept for inspection
+  // For a game server that hosts many matches: the room and the token the lobby
+  // issued. Sent as the first message once connected.
+  std::optional<msg::Join> join{};
 };
 
 struct ClientSessionStats {

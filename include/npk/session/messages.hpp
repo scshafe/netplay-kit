@@ -16,10 +16,15 @@
 //                             tick_rate u16 | hash_interval u16 | start_time u64
 //           frame 0 begins at start_time on the server's clock
 //   Hash    client -> server  type u8 | frame u32 | hash u64     (a checkpoint)
+//   Join    client -> server  type u8 | room_len u8 | room (1..32 of A-Za-z0-9_-) | token (16 bytes)
+//           the first message of a client on a game server that hosts many matches
 //   Resync  server -> client  type u8 | frame u32 | snapshot...  (the server's state at frame)
 
+#include <array>
 #include <cstdint>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <span>
 #include <vector>
 
@@ -33,6 +38,7 @@ enum class Type : std::uint8_t {
   Start = 16,
   Hash = 17,
   Resync = 18,
+  Join = 19,
 };
 
 inline constexpr std::size_t kMaxInputFrames = 32;  // frames in one Inputs message
@@ -46,6 +52,19 @@ inline bool shape_supported(std::size_t players, std::size_t input_size) noexcep
   return players >= 1 && players <= 16 && input_size >= 1 && input_size <= 255 &&
          players * input_size <= kMaxFramesBytes;
 }
+
+inline constexpr std::size_t kTokenSize = 16;
+inline constexpr std::size_t kMaxRoomId = 32;
+
+// 1..kMaxRoomId characters of A-Z a-z 0-9 '_' '-'.
+bool valid_room_id(std::string_view id) noexcept;
+
+struct Join {
+  std::string room;
+  std::array<std::uint8_t, kTokenSize> token{};
+};
+void encode_join(const Join& j, std::vector<std::uint8_t>& out);
+bool decode_join(std::span<const std::uint8_t> m, Join& out);
 
 std::optional<Type> type_of(std::span<const std::uint8_t> message) noexcept;
 
