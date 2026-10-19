@@ -5,6 +5,8 @@
 // server records the canonical inputs, so a test can replay them on a fresh game
 // and know the right hash at every frame.
 
+#include <algorithm>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -30,7 +32,7 @@ struct Match {
   };
 
   explicit Match(std::uint64_t seed, std::size_t players = 2, session::ServerSessionConfig sc = {},
-                 session::ClientSessionConfig cc = {})
+                 session::ClientSessionConfig cc = {}, std::size_t sessions = SIZE_MAX)
       : net(seed), players_n(players), server_game(players) {
     server_addr = Address::v4(10, 0, 0, 1, 7000);
     server_link = net.make_link(server_addr);
@@ -39,7 +41,7 @@ struct Match {
       canonical.insert(canonical.end(), in.begin(), in.end());
     };
     server = std::make_unique<session::ServerSession>(*server_link, server_game, sc);
-    for (std::size_t i = 0; i < players; ++i) {
+    for (std::size_t i = 0; i < std::min(players, sessions); ++i) {
       Player p;
       const auto me = Address::v4(10, 1, 0, static_cast<std::uint8_t>(i + 1), 5000);
       p.link = net.make_link(me);

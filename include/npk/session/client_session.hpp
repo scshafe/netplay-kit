@@ -40,6 +40,7 @@ struct ClientSessionStats {
   std::uint64_t messages_malformed = 0;
   std::uint64_t stalls = 0;                 // updates where the simulation could not catch up to the wall frame
   std::uint64_t delay_changes = 0;
+  std::uint64_t resyncs = 0;                // state transfers from the server taken
 };
 
 class ClientSession {
@@ -71,6 +72,7 @@ class ClientSession {
   void on_message(const transport::Message& m);
   void on_start(const msg::Start& s);
   void on_frames(const msg::Frames& f);
+  void on_resync(const transport::Message& m);
   void end(transport::DisconnectReason why);
   void label_inputs(Frame wall);
   void send_inputs();
@@ -89,6 +91,7 @@ class ClientSession {
   std::optional<InputDelay> delay_;
   transport::Micros next_delay_eval_ = 0;
   std::int64_t last_wall_ = -1;
+  std::int64_t wall_hint_ = -1;
   std::int64_t last_label_ = -1;  // highest frame given a local input
   std::deque<std::pair<Frame, std::vector<std::uint8_t>>> local_;  // labelled inputs not yet canonical
   std::vector<std::uint8_t> cur_input_, out_;

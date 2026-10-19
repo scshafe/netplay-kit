@@ -34,11 +34,11 @@ void round_trips() {
     CHECK(f.first == 77 && f.count == 5 && f.data.size() == 20);
   }
   {
-    msg::Start s{.player = 2, .players = 4, .input_size = 2, .tick_rate = 60, .start_time = 0x1122334455667788ULL};
+    msg::Start s{.player = 2, .players = 4, .input_size = 2, .tick_rate = 60, .hash_interval = 30, .start_time = 0x1122334455667788ULL};
     msg::encode_start(s, m);
     msg::Start d;
     CHECK(msg::decode_start(m, d));
-    CHECK(d.player == 2 && d.players == 4 && d.input_size == 2 && d.tick_rate == 60 && d.start_time == s.start_time);
+    CHECK(d.player == 2 && d.players == 4 && d.input_size == 2 && d.tick_rate == 60 && d.hash_interval == 30 && d.start_time == s.start_time);
   }
   {
     msg::encode_hash({.frame = 90, .hash = 0xfeedfacecafebeefULL}, m);

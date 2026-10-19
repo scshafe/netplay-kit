@@ -52,7 +52,7 @@ class ToyGame final : public npk::session::Simulation {
       }
     }
     rng_ = rng_ * 6364136223846793005ULL + 1442695040888963407ULL + frame;
-    if (frame == bug_at_frame) ++p_[0].x;  // a "non-determinism" bug, for the desync tests
+    if (frame == bug_at_frame || (bug_every && frame % bug_every == 0 && frame > 0)) ++rng_;  // a "non-determinism" bug, for the desync tests
   }
 
   void snapshot(std::vector<std::uint8_t>& out) const override {
@@ -83,6 +83,7 @@ class ToyGame final : public npk::session::Simulation {
 
   // Nonzero: step() at this frame changes the state in a way no input explains.
   Frame bug_at_frame = 0xffffffffu;
+  Frame bug_every = 0;  // nonzero: and at every multiple of this
 
  private:
   struct P {

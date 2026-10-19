@@ -84,16 +84,19 @@ void encode_start(const Start& s, std::vector<std::uint8_t>& out) {
   out.push_back(s.input_size);
   out.push_back(static_cast<std::uint8_t>(s.tick_rate >> 8));
   out.push_back(static_cast<std::uint8_t>(s.tick_rate));
+  out.push_back(static_cast<std::uint8_t>(s.hash_interval >> 8));
+  out.push_back(static_cast<std::uint8_t>(s.hash_interval));
   put64(out, s.start_time);
 }
 
 bool decode_start(std::span<const std::uint8_t> m, Start& out) noexcept {
-  if (!is(m, Type::Start) || m.size() != 1 + 3 + 2 + 8) return false;
+  if (!is(m, Type::Start) || m.size() != 1 + 3 + 2 + 2 + 8) return false;
   out.player = m[1];
   out.players = m[2];
   out.input_size = m[3];
   out.tick_rate = static_cast<std::uint16_t>((m[4] << 8) | m[5]);
-  out.start_time = get64(&m[6]);
+  out.hash_interval = static_cast<std::uint16_t>((m[6] << 8) | m[7]);
+  out.start_time = get64(&m[8]);
   return true;
 }
 

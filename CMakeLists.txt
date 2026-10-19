@@ -73,6 +73,7 @@ if(NPK_BUILD_TESTS)
   npk_test(input_delay_test)
   npk_test(messages_test)
   npk_test(session_test)
+  npk_test(desync_test)
 
   add_test(NAME echo_loopback COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/echo_loopback.sh $<TARGET_FILE:npk_echo>)
 endif()
