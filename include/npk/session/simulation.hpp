@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace npk::session {
@@ -49,6 +50,14 @@ class Simulation {
   // (an out-of-range direction, say); the server then uses the player's
   // previous input instead.
   virtual bool valid_input(std::span<const std::uint8_t> input) const { (void)input; return true; }
+  // Whether the game is over. The server checks after every frame; when true it
+  // ends the match and reports result_json() to the lobby. Default: never (the
+  // match ends when everyone has left).
+  virtual bool finished() const { return false; }
+  // The game's own account of how it ended, as a JSON document (for example the
+  // winner and the scores), reported to the lobby. Default: "null". Keep it small.
+  virtual std::string result_json() const { return "null"; }
+
   // The input before anyone has pressed anything. Default: all zero bytes.
   virtual void neutral_input(std::span<std::uint8_t> out) const;
   // What to guess for a player whose input has not arrived, from their previous

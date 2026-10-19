@@ -160,7 +160,13 @@ void ClientSession::update(Micros now) {
   while (auto m = client_.poll_message()) on_message(*m);
   switch (client_.state()) {
     case transport::Client::State::Connected:
-      if (state_ == State::Connecting) state_ = State::Waiting;
+      if (state_ == State::Connecting) {
+        state_ = State::Waiting;
+        if (cfg_.join) {
+          msg::encode_join(*cfg_.join, out_);
+          client_.send_reliable(out_);
+        }
+      }
       break;
     case transport::Client::State::Failed:
     case transport::Client::State::Closed:

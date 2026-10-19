@@ -29,6 +29,7 @@ std::optional<Type> type_of(std::span<const std::uint8_t> m) noexcept {
     case Type::Start:
     case Type::Hash:
     case Type::Resync:
+    case Type::Join:
       return static_cast<Type>(m[0]);
   }
   return std::nullopt;
@@ -125,6 +126,34 @@ bool decode_resync(std::span<const std::uint8_t> m, std::size_t max_snapshot, Re
   if (!is(m, Type::Resync) || m.size() < 5 || m.size() - 5 > max_snapshot) return false;
   out.frame = get32(&m[1]);
   out.snapshot = m.subspan(5);
+  return true;
+}
+
+bool valid_room_id(std::string_view id) noexcept {
+  if (id.empty() || id.size() > kMaxRoomId) return false;
+  for (const char c : id) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+    if (!ok) return false;
+  }
+  return true;
+}
+
+void encode_join(const Join& j, std::vector<std::uint8_t>& out) {
+  out.clear();
+  out.push_back(static_cast<std::uint8_t>(Type::Join));
+  out.push_back(static_cast<std::uint8_t>(j.room.size()));
+  out.insert(out.end(), j.room.begin(), j.room.end());
+  out.insert(out.end(), j.token.begin(), j.token.end());
+}
+
+bool decode_join(std::span<const std::uint8_t> m, Join& out) {
+  if (!is(m, Type::Join) || m.size() < 2) return false;
+  const std::size_t n = m[1];
+  if (n == 0 || n > kMaxRoomId || m.size() != 2 + n + kTokenSize) return false;
+  const std::string room(reinterpret_cast<const char*>(&m[2]), n);
+  if (!valid_room_id(room)) return false;
+  out.room = room;
+  std::copy_n(m.begin() + static_cast<std::ptrdiff_t>(2 + n), kTokenSize, out.token.begin());
   return true;
 }
 

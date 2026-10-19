@@ -27,6 +27,7 @@ class ToyGame final : public npk::session::Simulation {
   std::size_t input_size() const override { return 2; }
 
   void step(Frame frame, std::span<const std::uint8_t> in) override {
+    ++steps_;
     for (std::size_t i = 0; i < n_; ++i) {
       P& p = p_[i];
       p.vx = clamp(p.vx + (in[i * 2] - 1) * 3, -60, 60);
@@ -56,14 +57,16 @@ class ToyGame final : public npk::session::Simulation {
   }
 
   void snapshot(std::vector<std::uint8_t>& out) const override {
-    out.resize(8 + n_ * sizeof(P));
+    out.resize(12 + n_ * sizeof(P));
     std::memcpy(out.data(), &rng_, 8);
-    std::memcpy(out.data() + 8, p_.data(), n_ * sizeof(P));
+    std::memcpy(out.data() + 8, &steps_, 4);
+    std::memcpy(out.data() + 12, p_.data(), n_ * sizeof(P));
   }
   bool restore(std::span<const std::uint8_t> s) override {
-    if (s.size() != 8 + n_ * sizeof(P)) return false;
+    if (s.size() != 12 + n_ * sizeof(P)) return false;
     std::memcpy(&rng_, s.data(), 8);
-    std::memcpy(p_.data(), s.data() + 8, n_ * sizeof(P));
+    std::memcpy(&steps_, s.data() + 8, 4);
+    std::memcpy(p_.data(), s.data() + 12, n_ * sizeof(P));
     return true;
   }
   std::uint64_t hash() const override {
@@ -74,6 +77,12 @@ class ToyGame final : public npk::session::Simulation {
     return h;
   }
   bool valid_input(std::span<const std::uint8_t> in) const override { return in.size() == 2 && in[0] < 3 && in[1] < 2; }
+  bool finished() const override { return end_after != 0 && steps_ >= end_after; }
+  std::string result_json() const override {
+    std::string r = "{\"steps\":" + std::to_string(steps_) + ",\"hp\":[";
+    for (std::size_t i = 0; i < n_; ++i) r += (i ? "," : "") + std::to_string(p_[i].hp);
+    return r + "]}";
+  }
   void neutral_input(std::span<std::uint8_t> out) const override {
     for (std::size_t i = 0; i < out.size(); i += 2) {
       out[i] = 1;
@@ -83,7 +92,8 @@ class ToyGame final : public npk::session::Simulation {
 
   // Nonzero: step() at this frame changes the state in a way no input explains.
   Frame bug_at_frame = 0xffffffffu;
-  Frame bug_every = 0;  // nonzero: and at every multiple of this
+  Frame bug_every = 0;
+  Frame end_after = 0;  // nonzero: the game is over after this many steps  // nonzero: and at every multiple of this
 
  private:
   struct P {
@@ -98,6 +108,7 @@ class ToyGame final : public npk::session::Simulation {
     return rng_;
   }
   std::size_t n_;
+  Frame steps_ = 0;
   std::array<P, kMaxPlayers> p_{};
   std::uint64_t rng_ = 88172645463325252ULL;
 };
