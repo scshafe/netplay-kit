@@ -110,6 +110,29 @@ which it adopts with `resync`; the server's state wins. A client asks for
 canonical frames from `next_canonical_needed()` on, so what a resync dropped is
 sent again.
 
+**Sessions over the transport** (`server_session.hpp`, `client_session.hpp`,
+messages in `messages.hpp`). `ServerSession` seats the first `player_count`
+clients in order of arrival and, when all are seated, sends each a reliable
+`Start` (seat, tick rate, and the server-clock time at which frame 0 begins).
+Frame F begins at start + F / tick rate. Each client turns its measured clock
+offset into the *wall frame* (the frame that "now" is), and once per wall frame
+samples its input, labels it for frame wall + delay, uses it at once as the
+provisional input, and sends the last (up to 32) unconfirmed labelled inputs in
+one unreliable `Inputs` message together with the first canonical frame it
+still needs. Loss costs nothing because every message repeats what is
+unconfirmed. The server finalises frame F when every seated player's input is
+in, or at the frame's start plus `grace_frames` (2), and never more than
+`max_lead_frames` (8) ahead of the clock; it then steps its own simulation, and
+sends each client the canonical frames from that client's acknowledged one
+(`Frames`, unreliable, redundant, at most 1100 bytes of inputs a message).
+A missing input repeats the player's last canonical one, a player who left
+plays neutral input, and an input for a finalised frame is dropped. The first
+input received for a frame wins. A client that sends too many malformed or
+invalid messages is dropped; a game with more than 16 players, inputs over 255
+bytes or more than 1100 bytes of input per frame is refused. A client that
+arrives when the seats are full is closed. Reliable control messages (`Hash`,
+`Resync`) carry the desync check, below.
+
 **Input delay** (`input_delay.hpp`; decided with the owner session). Frames of
 delay = ceil((smoothed RTT / 2 + k * jitter) / frame time), with k = 2, jitter
 the mean deviation of the round trip, clamped to 1..6 frames at 60 Hz. It is
