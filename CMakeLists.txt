@@ -20,7 +20,10 @@ endif()
 
 add_library(netplay_kit
   src/version.cpp
+  src/transport/address.cpp
   src/transport/siphash.cpp
+  src/transport/sim_link.cpp
+  src/transport/udp_socket.cpp
   src/transport/wire.cpp)
 add_library(npk::netplay_kit ALIAS netplay_kit)
 target_include_directories(netplay_kit PUBLIC
@@ -46,4 +49,6 @@ if(NPK_BUILD_TESTS)
   npk_test(siphash_test)
   npk_test(wire_test)
   npk_test(wire_fuzz_test)
+  npk_test(sim_link_test)
+  npk_test(udp_loopback_test)
 endif()
