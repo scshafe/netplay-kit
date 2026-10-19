@@ -18,8 +18,10 @@
 // Reliable ordered channel. Messages up to max_message_size, cut into fragments,
 // each with a sequence number; delivered once, in order. The sender keeps at most
 // kWindow fragments in flight and resends one when the packet that carried it
-// goes unacked for a retransmission timeout (doubling each time, up to 16x), or at
-// once when three packets sent after it have been acked. The receiver
+// goes unacked for a retransmission timeout (doubling each time, up to 16x) or
+// at once when three packets sent after it have been acked. A timeout alone
+// resends only the oldest two fragments, as a probe: on a dead path that is all
+// that is sent, and the first ack that returns lets the rest follow. The receiver
 // holds kWindow slots, which the sender's window guarantees are enough, so a
 // fragment outside them is a protocol error. All buffers are bounded; a peer that
 // breaks a bound fails the connection (failed()).
@@ -29,6 +31,7 @@
 #include <optional>
 #include <vector>
 
+#include "npk/transport/clock_sync.hpp"
 #include "npk/transport/link.hpp"
 #include "npk/transport/rtt.hpp"
 #include "npk/transport/time.hpp"
@@ -51,6 +54,9 @@ struct ConnectionConfig {
   std::size_t max_inbox_unreliable = 256;         // messages waiting to be taken
   std::size_t max_inbox_reliable_bytes = 1 << 20;
   Micros keepalive_interval = 1'000'000;          // an empty packet when nothing else is sent
+  Micros ping_interval = 1'000'000;               // once the estimate has settled
+  Micros warmup_interval = 50'000;                // until warmup_pings have been sent
+  std::uint32_t warmup_pings = 8;
 };
 
 struct ConnectionStats {
@@ -61,10 +67,16 @@ struct ConnectionStats {
   std::uint64_t fragments_resent = 0;
   std::uint64_t unreliable_dropped_send = 0;
   std::uint64_t unreliable_dropped_recv = 0;
+  std::uint64_t pings_sent = 0;
+  std::uint64_t pongs_accepted = 0;
+  std::uint64_t pongs_rejected = 0;     // unknown id, wrong echo, or impossible times
+  std::uint64_t pings_unanswered = 0;   // more than kMaxPongsPerFlush at once
 };
 
 class Connection {
  public:
+  static constexpr std::size_t kMaxPongsPerFlush = 4;  // bounds what a flood of pings can draw out
+  static constexpr std::size_t kProbeFragments = 2;  // resent per flush when only a timer fired
   static constexpr std::size_t kWindow = 128;  // reliable fragments in flight / buffered
   // The largest unreliable message: a packet minus header and frame header.
   static constexpr std::size_t kMaxUnreliable = kMaxDatagram - kHeaderSize - 3;
@@ -76,6 +88,9 @@ class Connection {
   bool send_reliable(std::span<const std::uint8_t> data);
 
   std::optional<Message> poll_message();
+
+  // Seeds the clock estimate with a measurement made during the handshake.
+  void add_clock_sample(Micros rtt, Micros offset) { clock_.add(rtt, offset); }
 
   // Takes one packet that the owner has matched to this connection (right id,
   // right address). Returns whether it was accepted.
@@ -91,7 +106,10 @@ class Connection {
   DisconnectReason peer_close_reason() const { return peer_close_reason_; }
   bool failed() const { return failed_; }
   Micros last_heard() const { return last_heard_; }
+  // The retransmission timer's estimate (from acks).
   const RttEstimator& rtt() const { return rtt_; }
+  // The peer's clock and the path's round trip (from pings): what netcode should use.
+  const ClockSync& clock() const { return clock_; }
   const ConnectionStats& stats() const { return stats_; }
   ConnectionId id() const { return id_; }
 
@@ -127,15 +145,35 @@ class Connection {
   void accept_fragment(const Frame& f);
   void deliver_in_order();
   void fill_window();
-  bool fragment_due(const SendFragment& f, Micros now) const;
+  enum class Due { No, Now, Probe };
+  Due fragment_due(const SendFragment& f, Micros now) const;
   Header next_header();
   void record_sent(std::uint16_t seq, Micros now, bool eliciting, std::vector<std::uint16_t>&& fragments);
   void fail() { failed_ = true; }
+  void accept_pong(const Frame& f, Micros now);
 
   ConnectionId id_;
   ConnectionConfig cfg_;
   RttEstimator rtt_;
+  ClockSync clock_;
   ConnectionStats stats_;
+
+  // Pings.
+  struct PingRecord {
+    bool valid = false;
+    std::uint32_t id = 0;
+    Micros sent = 0;
+  };
+  struct PendingPong {
+    std::uint32_t id;
+    std::uint64_t t1;
+    Micros received;
+  };
+  std::array<PingRecord, 8> pings_{};
+  std::uint32_t next_ping_id_ = 1;
+  std::uint32_t pings_started_ = 0;
+  Micros next_ping_ = 0;
+  std::deque<PendingPong> pending_pongs_;
 
   // Packet numbers.
   std::uint16_t send_seq_ = 1;

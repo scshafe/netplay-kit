@@ -123,7 +123,7 @@ void a_dead_link_costs_few_resends_and_recovers() {
   const auto before = w.clients[0].link->stats().sent_datagrams;
   w.run(6'000'000);
   const auto during = w.clients[0].link->stats().sent_datagrams - before;
-  CHECK(during < 80);  // backoff, not a flood: 15 fragments, a few doublings, keepalives
+  CHECK(during < 60);  // 15 fragments sent once, then probes with backoff, pings and keepalives
   CHECK(c.state() == Client::State::Connected);
   w.net.set_conditions(client_addr(0), kServer, {.delay = 20'000});
   w.run(8'000'000);

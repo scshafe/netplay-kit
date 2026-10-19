@@ -44,6 +44,8 @@ class Client {
   bool send_reliable(std::span<const std::uint8_t> data);
   // Round-trip estimate of the connection, if there is one.
   std::optional<RttEstimator> rtt() const { return conn_ ? std::optional(conn_->rtt()) : std::nullopt; }
+  // The server's clock and the round trip, if there is a connection. See ClockSync.
+  std::optional<ClockSync> clock() const { return conn_ ? std::optional(conn_->clock()) : std::nullopt; }
   // Messages received, also after the connection closed, until taken.
   std::optional<Message> poll_message();
 
