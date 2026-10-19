@@ -194,23 +194,48 @@ Planned PRs: in-tree JSON; HTTP server and client; matches hosted in rooms
 with tokens, and the game server; the lobby; the executables, images and a
 compose file with an end-to-end test.
 
-## Network path (prove early)
+## Network path (measured)
 
-The scshafe runner lane puts each service on its own tailnet node. The node is
-a Tailscale sidecar in userspace mode, and `tailscale serve` proxies TCP and
-HTTPS only. Game traffic is UDP. The first milestone must prove that UDP from
-a tailnet peer reaches the game server through the node. Measure the latency
-and jitter it adds compared with LAN, and record the result. `tools/npk_echo.cpp` (image: `docker/Dockerfile.echo`) is the
-measuring tool: a UDP echo server and a probe that reports loss, reordering,
-round-trip percentiles and jitter for datagrams of chosen sizes, up to the 1200
-limit. If the userspace
-path is not good enough, the options are, recorded as a decision with the
-owner:
+The scshafe runner lane puts each service on its own tailnet node: a Tailscale
+sidecar in userspace mode, with the service in the sidecar's network namespace.
+`tailscale serve` proxies TCP and HTTPS only, and game traffic is UDP, so the
+question was whether UDP from a tailnet peer reaches the game server through such
+a node, and what it costs.
 
-- a kernel-mode sidecar (needs privileges the lane does not grant today);
-- a native node, as lexinet does with tsnet (needs a C++-compatible Tailscale
-  client);
-- a host port on the PC's tailnet address.
+**Result (issue #8, run by the owner session on 2026-10-19 with `npk_echo`, 1000
+datagrams of 64, 512 and 1200 bytes every 16 ms, two runs each; Tailscale 1.102 to
+1.104, sidecar image 1.102.5):** the sidecar model works for game UDP. Echo in the
+network namespace of a userspace sidecar, with no published port and no `serve`,
+was reached on the node's tailnet address on UDP 7777.
+
+| Path | p50 at 1200 B | loss at 1200 B | reordering | jitter |
+| --- | --- | --- | --- | --- |
+| LAN (host port, Docker publishing) | 2.4 ms | 0% | 0 | 0.7 ms |
+| PC's tailnet address (host `tailscaled`, direct) | 3.3-3.6 ms | 0% | 0 | 0.8-1.1 ms |
+| Runner-lane shape (userspace sidecar, direct) | 3.5-3.6 ms | 0-0.1% | 0 | 0.9-1.1 ms |
+
+The tailnet adds about 1 ms at the median over the LAN, the userspace sidecar adds
+nothing measurable over the host's `tailscaled`, and 1200-byte datagrams (1248 on
+the wire with IPv6 and UDP headers) pass, which confirms the packet size choice.
+The spread (p95 - p50) is 1.6-2.6 ms. The occasional lost packet (at most 0.3%,
+at 64 and 512 bytes as well as 1200) is not an MTU effect.
+
+Caveats to carry forward:
+
+- A new node spends its first few seconds relayed through DERP (about 90 ms round
+  trip) until the direct path is set up. A game server's node is long-lived, so
+  this is the players' first seconds only if their own paths are not direct yet;
+  the session layer's clock sync and input delay adapt to whatever the path is.
+- The test peers shared a LAN, so the direct path was easy. A player elsewhere
+  depends on NAT traversal to the host, or else on DERP at tens of milliseconds
+  more; the lobby may want to show the measured round trip before a match.
+- The tailnet's policy is still allow-all, so UDP was allowed without a change.
+  When that grant is narrowed, the game server's node needs its own grant, for
+  example `{src: [<players>], dst: ["tag:<game>"], ip: ["udp:7777"]}` (the tag
+  and the port are the game's; the infra repository owns the policy).
+
+Options that were kept in reserve and are not needed now: a kernel-mode sidecar,
+a native node (tsnet), a host port on the PC's tailnet address.
 
 The lobby is HTTP, so it fits the existing sidecar model as it is.
 
@@ -267,5 +292,6 @@ netplay-kit itself ships an example game and a compose file for local runs.
    hash checks, resync and hostile-input tests.
 3. The game server and lobby executables, plus Docker images (see "Lobby and
    game server").
-4. **The UDP-over-tailnet proof** on the PC (with the owner session).
+4. **The UDP-over-tailnet proof** on the PC (with the owner session): done, see
+   "Network path (measured)".
 5. The home page.
