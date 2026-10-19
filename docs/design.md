@@ -79,7 +79,10 @@ The scshafe runner lane puts each service on its own tailnet node. The node is
 a Tailscale sidecar in userspace mode, and `tailscale serve` proxies TCP and
 HTTPS only. Game traffic is UDP. The first milestone must prove that UDP from
 a tailnet peer reaches the game server through the node. Measure the latency
-and jitter it adds compared with LAN, and record the result. If the userspace
+and jitter it adds compared with LAN, and record the result. `tools/npk_echo.cpp` (image: `docker/Dockerfile.echo`) is the
+measuring tool: a UDP echo server and a probe that reports loss, reordering,
+round-trip percentiles and jitter for datagrams of chosen sizes, up to the 1200
+limit. If the userspace
 path is not good enough, the options are, recorded as a decision with the
 owner:
 

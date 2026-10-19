@@ -1,0 +1,18 @@
+# The UDP echo server and probe (tools/npk_echo.cpp), for measuring a network
+# path. Build from the repository root:  docker build -f docker/Dockerfile.echo -t npk-echo .
+FROM gcc:13-bookworm AS build
+# One target, so g++ directly (the image's cmake may be older than the project's 3.28).
+WORKDIR /src
+COPY include include
+COPY src src
+COPY tools tools
+RUN g++ -std=c++20 -O2 -static -Wall -Wextra -Iinclude -Isrc -o /npk_echo tools/npk_echo.cpp \
+    $(ls src/*.cpp src/transport/*.cpp)
+
+# Static, so the runtime image needs no libraries.
+FROM scratch
+COPY --from=build /npk_echo /usr/local/bin/npk_echo
+USER 65534:65534
+EXPOSE 7777/udp
+ENTRYPOINT ["npk_echo"]
+CMD ["serve", "--port", "7777"]

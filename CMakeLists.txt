@@ -36,6 +36,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(netplay_kit PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# Not part of the library: a UDP echo server and probe for measuring a path.
+add_executable(npk_echo tools/npk_echo.cpp)
+target_link_libraries(npk_echo PRIVATE npk::netplay_kit)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(npk_echo PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 if(NPK_BUILD_TESTS)
   enable_testing()
   function(npk_test name)
@@ -57,4 +64,6 @@ if(NPK_BUILD_TESTS)
   npk_test(handshake_test)
   npk_test(channels_test)
   npk_test(clock_sync_test)
+
+  add_test(NAME echo_loopback COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/echo_loopback.sh $<TARGET_FILE:npk_echo>)
 endif()
