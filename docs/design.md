@@ -42,6 +42,12 @@ bits), handshake bodies, and for established connections a list of frames
 (unreliable, reliable fragment, ping, pong, close). Handshake requests are
 padded to at least 128 bytes so no reply can exceed the request.
 
+The transport talks to a `Link` (send a datagram, receive one, both
+non-blocking), never to a socket. `UdpSocket` is the POSIX implementation;
+`SimNetwork`/`SimLink` is an in-process one with drop, delay, jitter, reorder
+and duplicate, a virtual clock and a seed, so transport and session tests are
+exact and repeatable. Time is always passed in (`Micros now`), never read.
+
 ## Network path (prove early)
 
 The scshafe runner lane puts each service on its own tailnet node. The node is
