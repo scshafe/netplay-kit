@@ -1,0 +1,35 @@
+# Project intent (BASE-01). The schema is illustrative until M2/M7 fix it.
+schema_version = 1
+
+[project]
+id = "netplay-kit"
+class = "managed"
+
+# A native, desktop or game application: no language, build system or
+# package manager is assumed; [verify] is how this one is built and tested.
+[app]
+kind = "native"
+
+# BASE-06: the one command that verifies this repository, run from its root
+# by .github/workflows/ci.yml and by hand on the checkout under review. Keep
+# the two equal.
+[verify]
+command = "./scripts/verify"
+
+[skills]
+# BASE-05 asks for .agents/skills; the catalog is M4. Recorded gap.
+selected = []
+
+# Adopted, not generated (D-6): `dev adopt --add-missing` added this file to
+# an existing native project on 2026-10-19. It records which scshafe-dev
+# standard the repository was adopted under; it does not claim scshafe-dev
+# rendered this repository's files, and the ones that existed were left as
+# they are.
+[template]
+source = "scshafe/scshafe-dev"
+version = "0.14.0"
+commit = "1c3329871cb04f7ea4aedd96175e01c8c3bbda6b"
+released = true
+dirty = false
+mode = "adopted"
+params = { kind = "native", name = "netplay-kit", date = "2026-10-19" }
