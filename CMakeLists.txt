@@ -20,6 +20,9 @@ endif()
 
 add_library(netplay_kit
   src/version.cpp
+  src/http/client.cpp
+  src/http/http.cpp
+  src/http/server.cpp
   src/json/json.cpp
   src/session/client_session.cpp
   src/session/messages.cpp
@@ -76,6 +79,8 @@ if(NPK_BUILD_TESTS)
   npk_test(session_test)
   npk_test(desync_test)
   npk_test(json_test)
+  npk_test(http_parse_test)
+  npk_test(http_test)
 
   add_test(NAME echo_loopback COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/echo_loopback.sh $<TARGET_FILE:npk_echo>)
 endif()
