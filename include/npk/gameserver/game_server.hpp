@@ -142,6 +142,7 @@ class GameServer final : private session::MatchIo {
   std::string lobby_host_;
   transport::Micros next_register_ = 0, next_resolve_ = 0, now_ = 0;
   bool register_in_flight_ = false;
+  int registered_ = -1;  // -1 not tried yet, 0 failing, 1 working: for logging changes only
   GameServerStats stats_;
 };
 

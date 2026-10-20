@@ -21,6 +21,7 @@ endif()
 add_library(netplay_kit
   src/version.cpp
   src/gameserver/game_server.cpp
+  src/gameserver/main.cpp
   src/http/client.cpp
   src/http/http.cpp
   src/http/server.cpp
@@ -49,6 +50,20 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(netplay_kit PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# Executables. npk-lobby is the lobby; the toy game server and bot are the example
+# game (a real game links the library and calls npk::gameserver::run itself).
+function(npk_executable name source)
+  add_executable(${name} ${source})
+  target_link_libraries(${name} PRIVATE npk::netplay_kit)
+  target_include_directories(${name} PRIVATE examples/toy)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(${name} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+endfunction()
+npk_executable(npk_lobby apps/npk_lobby.cpp)
+npk_executable(toy_gameserver examples/toy/toy_gameserver.cpp)
+npk_executable(toy_bot examples/toy/toy_bot.cpp)
+
 # Not part of the library: a UDP echo server and probe for measuring a path.
 add_executable(npk_echo tools/npk_echo.cpp)
 target_link_libraries(npk_echo PRIVATE npk::netplay_kit)
@@ -61,7 +76,7 @@ if(NPK_BUILD_TESTS)
   function(npk_test name)
     add_executable(${name} tests/${name}.cpp)
     target_link_libraries(${name} PRIVATE npk::netplay_kit)
-    target_include_directories(${name} PRIVATE tests)
+    target_include_directories(${name} PRIVATE tests examples/toy)
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
       target_compile_options(${name} PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
@@ -88,5 +103,7 @@ if(NPK_BUILD_TESTS)
   npk_test(gameserver_test)
   npk_test(lobby_test)
 
+  add_test(NAME e2e COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e.sh ${CMAKE_BINARY_DIR})
+  set_tests_properties(e2e PROPERTIES TIMEOUT 120)
   add_test(NAME echo_loopback COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/echo_loopback.sh $<TARGET_FILE:npk_echo>)
 endif()

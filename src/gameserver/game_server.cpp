@@ -295,6 +295,10 @@ void GameServer::pump_lobby(Micros now) {
   if (now >= next_resolve_ && !lobby_addr_) {
     next_resolve_ = now + 30'000'000;
     if (auto hp = http::parse_host_port(cfg_.lobby, 80)) lobby_addr_ = http::resolve(hp->host, hp->port);
+    if (!lobby_addr_ && registered_ != 0) {
+      say("cannot find the lobby's address");
+      registered_ = 0;
+    }
   }
   if (!lobby_addr_) return;
   http::OutgoingRequest base;
@@ -316,8 +320,12 @@ void GameServer::pump_lobby(Micros now) {
       register_in_flight_ = false;
       if (r.ok && r.status / 100 == 2) {
         ++stats_.registrations_ok;
+        if (registered_ != 1) say("registered with the lobby");
+        registered_ = 1;
       } else {
         ++stats_.registrations_failed;
+        if (registered_ != 0) say("cannot register with the lobby: " + (r.ok ? "status " + std::to_string(r.status) : r.error));
+        registered_ = 0;
         lobby_addr_.reset();  // look the name up again: the lobby may have moved
         next_resolve_ = 0;
       }

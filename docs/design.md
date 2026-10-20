@@ -307,10 +307,18 @@ a licence compatible with MIT.
 
 ## Deploy
 
-Two images, `npk-lobby` and the game server. The game server image is built
-by the game: ledgefall's server links netplay-kit. Both go through the scshafe
-runner lane on the PC (`host = "pc"`), configured in the game's repository.
-netplay-kit itself ships an example game and a compose file for local runs.
+Two images, `npk-lobby` and a game server. The game server image is built by the
+game: ledgefall's server links netplay-kit and calls `npk::gameserver::run` with its
+`Simulation`. Both go through the scshafe runner lane on the PC (`host = "pc"`),
+configured in the game's repository. netplay-kit ships `docker/Dockerfile` (targets
+`lobby` and `toy-gameserver`, one binary each on `debian:bookworm-slim` as uid 65534)
+and `compose.yaml` for local runs. Configuration is environment variables
+(`npk/gameserver/main.hpp` lists them) and the shared secret comes by name through
+`.env`. The lobby and the game server must share a network where the game server
+can reach the lobby by name or address (they register over HTTP, and a userspace
+Tailscale sidecar forwards inbound traffic only); players reach the lobby on TCP
+and the game server on UDP. Why Debian and not `scratch`: a static glibc binary
+cannot resolve compose service names.
 
 ## First milestones
 
@@ -322,7 +330,7 @@ netplay-kit itself ships an example game and a compose file for local runs.
    the session messages and the server and client sessions over the transport;
    hash checks, resync and hostile-input tests.
 3. The game server and lobby executables, plus Docker images (see "Lobby and
-   game server").
+   game server"): done, with an end-to-end test of the real executables.
 4. **The UDP-over-tailnet proof** on the PC (with the owner session): done, see
    "Network path (measured)".
 5. The home page.

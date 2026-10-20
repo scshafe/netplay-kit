@@ -1,0 +1,31 @@
+# The example stack for local runs:  docker compose up --build
+# Put NPK_CONTROL_SECRET (16+ random characters, see .env.example) in a .env next
+# to this file. The secret is passed to the containers by name; it is not in this
+# file, a command line or an image. The control API (9000) is reachable only on
+# the stack's own network.
+services:
+  lobby:
+    build: { context: ., dockerfile: docker/Dockerfile, target: lobby }
+    environment:
+      - NPK_CONTROL_SECRET
+    ports:
+      - "${NPK_LOBBY_PORT:-8080}:8080"
+    restart: unless-stopped
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+
+  gameserver:
+    build: { context: ., dockerfile: docker/Dockerfile, target: toy-gameserver }
+    environment:
+      - NPK_CONTROL_SECRET
+      - NPK_LOBBY=lobby:8080
+      - NPK_ADVERTISE_CONTROL=gameserver:9000
+      # What players put in their client: the address of this machine as they reach it.
+      - NPK_ADVERTISE_UDP=${NPK_PUBLIC_UDP:-localhost:7777}
+      - NPK_MAX_MATCHES=${NPK_MAX_MATCHES:-16}
+    ports:
+      - "${NPK_UDP_PORT:-7777}:7777/udp"
+    depends_on: [lobby]
+    restart: unless-stopped
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
