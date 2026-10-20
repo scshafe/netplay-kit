@@ -205,9 +205,25 @@ in `join_timeout`, or after `max_duration`; the result (`outcome`, `frames`,
 `joined`, and the game's `result_json()`) is posted to the lobby and retried for a
 minute. Joining a match that has started is not supported yet.
 
+**The lobby as built** (`npk/lobby/lobby.hpp` lists the whole API). A room is
+open -> starting -> playing -> finished. There are no accounts: joining a room
+returns a *seat secret*, sent back as a Bearer token to ready, leave, poll with
+presence, and ask `/me` for the game server's address, the room id and that
+seat's own token (never anyone else's, never in a public view). A room whose
+seats are all taken and ready is assigned: the lobby picks a registered game
+server with room (most free first, skipping ones that refused or failed
+recently), POSTs the room with fresh per-seat tokens, and tries the next on a
+409 or an error; with none left the room goes back to open with
+`"error": "no_server"`. A server whose heartbeat lapses (20 s) fails its rooms
+as `server_lost`. `GET /api/rooms/<id>?since=V&wait=S` is the push channel: a
+long-poll held up to 25 s, answered when the room's version changes. Limits:
+256 rooms, 512 held polls, 64 per room, a token bucket on writes per source
+address, names and options bounded, seats not seen for 45 s freed, empty rooms
+removed after two minutes, finished ones after ten.
+
 Planned PRs: in-tree JSON; HTTP server and client; matches hosted in rooms
-with tokens, and the game server (done); the lobby; the executables, images and a
-compose file with an end-to-end test.
+with tokens, and the game server (done); the lobby (done); the executables,
+images and a compose file with an end-to-end test.
 
 ## Network path (measured)
 
