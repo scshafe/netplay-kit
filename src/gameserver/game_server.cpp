@@ -100,7 +100,8 @@ void GameServer::on_control(const http::Request& r, http::Responder rs) {
   if (r.path == "/rooms") {
     out = r.method == "POST" ? create_room(r) : error(405, "method not allowed");
   } else if (r.path.rfind("/rooms/", 0) == 0) {
-    out = r.method == "DELETE" ? cancel_room(std::string_view(r.path).substr(7)) : error(405, "method not allowed");
+    const std::string_view id = std::string_view(r.path).substr(7);
+    out = r.method == "DELETE" ? cancel_room(id) : r.method == "GET" ? room_view(id) : error(405, "method not allowed");
   } else if (r.path == "/status") {
     out = r.method == "GET" ? status() : error(405, "method not allowed");
   } else {
@@ -146,9 +147,10 @@ Response GameServer::create_room(const http::Request& r) {
   if (rooms_.size() >= cfg_.max_matches) return refuse(409, "full");
   json::Value options = json::Value(json::Value::Object{});
   if (const json::Value* o = doc->find("options")) {
-    if (!o->is_object()) return refuse(400, "options is not an object");
+    if (!o->is_object() && !o->as_string()) return refuse(400, "options is not an object or string");
     options = *o;
   }
+  room.options = options;
   room.sim = cfg_.factory(room.tokens.size(), options);
   if (!room.sim || room.sim->player_count() != room.tokens.size() ||
       !session::msg::shape_supported(room.sim->player_count(), room.sim->input_size()))
@@ -161,6 +163,16 @@ Response GameServer::create_room(const http::Request& r) {
   json::Value ok;
   ok.set("room_id", rid);
   return Response::json(201, json::dump(ok));
+}
+
+Response GameServer::room_view(std::string_view id) const {
+  const auto it = rooms_.find(std::string(id));
+  if (it == rooms_.end()) return error(404, "no such room");
+  json::Value v;
+  v.set("room_id", it->first);
+  v.set("seats", static_cast<std::int64_t>(it->second.tokens.size()));
+  v.set("options", it->second.options);  // never the tokens
+  return Response::json(200, json::dump(v));
 }
 
 Response GameServer::cancel_room(std::string_view id) {

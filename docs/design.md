@@ -194,7 +194,8 @@ Decided in `docs/decisions/0003-room-handoff.md` and `0004-http-and-json.md`.
 is the server side of one match with no network of its own (it sends through a
 `MatchIo`); `ServerSession` hosts one match with seats by arrival, `GameServer`
 hosts many. The control API: `POST /rooms` (`room_id`, `seats` with 32-hex
-`token`s, `options` passed to the game's factory), `DELETE /rooms/<id>`, `GET
+`token`s, `options` passed to the game's factory), `GET /rooms/<id>` (id, seat
+count and options, never tokens), `DELETE /rooms/<id>`, `GET
 /status`; 401 without the secret, 400 for anything malformed, 409 `full` or
 `exists`. A client's first reliable message is `Join` (room id, token); the token
 is compared against every seat of the room in constant time, a seat is taken once
@@ -220,6 +221,15 @@ long-poll held up to 25 s, answered when the room's version changes. Limits:
 256 rooms, 512 held polls, 64 per room, a token bucket on writes per source
 address, names and options bounded, seats not seen for 45 s freed, empty rooms
 removed after two minutes, finished ones after ten.
+
+**Room options.** A room may carry `options`, set once in `POST /api/rooms`: a JSON
+object or string, at most 1 KiB serialised (`kMaxOptionsBytes`), `{}` if absent.
+The lobby never reads them. They are immutable (no endpoint changes them; a
+rematch is a new room) and come back unchanged in the room list, the room read,
+the join response (`room`), `/me`, and in the game server's `POST /rooms` and
+`GET /rooms/<id>`, so a joiner can configure its simulation before it connects
+and a server or bot can build the simulation without flags. They are public to
+anyone who can list rooms: no secrets in them. The game validates them.
 
 Planned PRs: in-tree JSON; HTTP server and client; matches hosted in rooms
 with tokens, and the game server (done); the lobby (done); the executables,
