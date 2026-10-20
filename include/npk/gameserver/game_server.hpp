@@ -8,8 +8,9 @@
 //    not join in time, or joins wrongly too often, is closed.
 //  - Control API (HTTP/JSON, shared secret as `Authorization: Bearer ...`), for
 //    the lobby only:
-//      POST   /rooms        {"room_id", "seats": [{"token": <32 hex>}...], "options": {...}}
+//      POST   /rooms        {"room_id", "seats": [{"token": <32 hex>}...], "options": {...} | "..."}
 //                           201 created; 409 {"error":"full"|"exists"}; 400 {"error":...}
+//      GET    /rooms/<id>   {"room_id", "seats", "options"} (never the tokens), or 404
 //      DELETE /rooms/<id>   204, or 404; ends the match without a result
 //      GET    /status       {"max_matches", "matches", "rooms": [...]}
 //  - To the lobby (when `lobby` is set): `POST /control/servers` every few seconds
@@ -96,6 +97,7 @@ class GameServer final : private session::MatchIo {
  private:
   struct Room {
     std::string id;
+    json::Value options;
     std::unique_ptr<session::Simulation> sim;
     std::unique_ptr<session::Match> match;
     std::vector<std::array<std::uint8_t, session::msg::kTokenSize>> tokens;
@@ -119,6 +121,7 @@ class GameServer final : private session::MatchIo {
 
   void on_control(const http::Request& r, http::Responder rs);
   http::Response create_room(const http::Request& r);
+  http::Response room_view(std::string_view id) const;
   http::Response cancel_room(std::string_view id);
   http::Response status() const;
   void handle_join(transport::ConnectionId id, const transport::Message& m, transport::Micros now);

@@ -563,7 +563,50 @@ void a_site_directory_replaces_the_page() {
 
 }  // namespace
 
+void options_travel_with_the_room() {
+  World w;
+  FakeServer ok(201);
+  w.fakes.push_back(&ok);
+  w.register_fake(ok);
+  const std::string opts = "{\"stocks\":3,\"stage\":\"Quarry\",\"picks\":[\"a\",\"b\"],\"nested\":{\"x\":null}}";
+  const std::string room = w.make_room("opt", 2, opts);
+  const std::string want = json::dump(*json::parse(opts));
+  auto dumped = [](const json::Value* v) { return v ? json::dump(*v) : std::string("<missing>"); };
+  // The room read, the room list and the join response all carry the same value.
+  CHECK(dumped(w.call("GET", "/api/rooms/" + room).body.find("options")) == want);
+  const json::Value list = w.call("GET", "/api/rooms").body;
+  CHECK(dumped(list.find("rooms")->as_array()->at(0).find("options")) == want);
+  auto j = w.post("/api/rooms/" + room + "/join", "{\"name\":\"ann\"}");
+  CHECK(j.status == 200 && dumped(j.body.find("room")->find("options")) == want);
+  const World::Seat a{*j.body.find("seat")->as_int(), *j.body.find("secret")->as_string()};
+  auto me = w.post("/api/rooms/" + room + "/me", "", a.secret);
+  CHECK(me.status == 200 && dumped(me.body.find("options")) == want);
+  // Never the secrets.
+  CHECK(w.call("GET", "/api/rooms").raw.find(a.secret) == std::string::npos);
+  // Immutable: no endpoint takes options after creation.
+  CHECK(w.post("/api/rooms/" + room + "/ready", "{\"ready\":true,\"options\":{\"stocks\":9}}", a.secret).status == 200);
+  CHECK(dumped(w.call("GET", "/api/rooms/" + room).body.find("options")) == want);
+  // The game server is handed the same value when the match starts.
+  const auto b = w.join(room, "bob");
+  w.ready(room, b);
+  w.run(200'000);
+  CHECK(w.state(room) == "playing");
+  CHECK(dumped(json::parse(ok.last_body)->find("options")) == want);
+  CHECK(dumped(w.post("/api/rooms/" + room + "/me", "", a.secret).body.find("options")) == want);
+  // A string works too; no options means {}; the cap is 1 KiB serialised.
+  auto s = w.post("/api/rooms", "{\"name\":\"s\",\"options\":\"3 stocks, Quarry\"}");
+  CHECK(s.status == 201 && *s.body.find("options")->as_string() == "3 stocks, Quarry");
+  auto none = w.post("/api/rooms", "{\"name\":\"n\"}");
+  CHECK(none.status == 201 && none.body.find("options")->is_object() && none.body.find("options")->as_object()->empty());
+  for (const char* bad : {"5", "true", "null", "[1]"}) {
+    CHECK(w.post("/api/rooms", std::string("{\"name\":\"b\",\"options\":") + bad + "}").status == 400);
+  }
+  CHECK(w.post("/api/rooms", "{\"name\":\"b\",\"options\":\"" + std::string(1022, 'x') + "\"}").status == 201);  // 1024 with quotes
+  CHECK(w.post("/api/rooms", "{\"name\":\"b\",\"options\":\"" + std::string(1023, 'x') + "\"}").status == 400);
+}
+
 int main() {
+  options_travel_with_the_room();
   api_basics_and_validation();
   seats_ready_and_secrets();
   long_polling();

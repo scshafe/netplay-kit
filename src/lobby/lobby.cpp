@@ -245,6 +245,7 @@ json::Value Lobby::summary(const Room& room) const {
   v.set("name", room.name);
   v.set("game", room.game);
   v.set("state", state_name(static_cast<int>(room.state)));
+  v.set("options", room.options);
   std::int64_t taken = 0;
   for (const Seat& s : room.seats) taken += s.taken;
   v.set("seat_count", static_cast<std::int64_t>(room.seats.size()));
@@ -311,7 +312,7 @@ Response Lobby::create_room(const Request& r) {
   if (seats < 1 || seats > static_cast<std::int64_t>(cfg_.max_seats)) return error(400, "bad seats");
   json::Value options = json::Value(json::Value::Object{});
   if (const json::Value* o = body->find("options")) {
-    if (!o->is_object() || json::dump(*o).size() > 4096) return error(400, "bad options");
+    if (!(o->is_object() || o->as_string()) || json::dump(*o).size() > kMaxOptionsBytes) return error(400, "bad options");
     options = *o;
   }
   Room room;
@@ -387,6 +388,7 @@ Response Lobby::me(Room& room, Seat* seat) {
   seat->seen = now_;
   json::Value v;
   v.set("state", state_name(static_cast<int>(room.state)));
+  v.set("options", room.options);
   if (room.state == State::Playing) {
     const auto it = servers_.find(room.server);
     v.set("room_id", room.id);

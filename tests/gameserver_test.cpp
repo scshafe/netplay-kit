@@ -192,6 +192,19 @@ void creating_a_game_and_playing_it() {
   CHECK(s && *s->find("matches")->as_int() == 1 && s->find("rooms")->as_array()->size() == 1);
 }
 
+void the_room_view_shows_options_and_no_tokens() {
+  Fixture f;
+  CHECK(f.status(f.call("POST", "/rooms", room_body("opt", {1, 2}, "{\"stage\":\"Quarry\",\"stocks\":3}"))) == 201);
+  auto v = f.call("GET", "/rooms/opt", "");
+  auto doc = json::parse(v.body);
+  CHECK(f.status(v) == 200 && doc && *doc->find("seats")->as_int() == 2);
+  CHECK(json::dump(*doc->find("options")) == json::dump(*json::parse("{\"stage\":\"Quarry\",\"stocks\":3}")));
+  CHECK(v.body.find("token") == std::string::npos);
+  CHECK(f.status(f.call("GET", "/rooms/none", "")) == 404);
+  CHECK(f.status(f.call("POST", "/rooms", room_body("str", {3, 4}, "\"3 stocks\""))) == 201);
+  CHECK(*json::parse(f.call("GET", "/rooms/str", "").body)->find("options")->as_string() == "3 stocks");
+}
+
 void many_matches_at_once_and_capacity() {
   gameserver::GameServerConfig cfg;
   cfg.max_matches = 2;
@@ -419,6 +432,7 @@ void nobody_showing_up_and_everybody_leaving() {
 int main() {
   a_short_secret_or_no_factory_is_refused();
   creating_a_game_and_playing_it();
+  the_room_view_shows_options_and_no_tokens();
   many_matches_at_once_and_capacity();
   the_control_api_needs_the_secret_and_checks_its_input();
   only_the_right_token_gets_a_seat();

@@ -2,8 +2,11 @@
 
 // The lobby: rooms, seats, ready and start, over HTTP + JSON, and the hand-off of
 // a ready room to a registered game server (docs/decisions/0003-room-handoff.md).
-// It is game-agnostic: a room has a free-form game name and an options object
-// that are passed on to the game server unread.
+// It is game-agnostic: a room has a free-form game name and `options` (a JSON
+// object or string, at most kMaxOptionsBytes serialised) that the lobby never
+// reads. They are set when the room is created, never change, and are returned
+// as-is in the room list, the room, the join response and /me, and passed to the
+// game server with the room. A room made without options has {}.
 //
 // The home page is served at / (see site.hpp); GET /api/site is its text as JSON.
 //
@@ -11,14 +14,14 @@
 // back as `Authorization: Bearer <seat secret>`):
 //   GET  /api/status
 //   GET  /api/rooms                      list
-//   POST /api/rooms                      {"name", "game", "seats", "options"}  -> 201 room
+//   POST /api/rooms                      {"name", "game", "seats", "options"?}  -> 201 room
 //   GET  /api/rooms/<id>[?since=V&wait=S]  the room; with since=V it waits (up to S <= 25 s)
 //                                        until the version is no longer V (long-poll)
 //   POST /api/rooms/<id>/join            {"name"} -> {"seat", "secret"}
 //   POST /api/rooms/<id>/ready           {"ready": bool}           (seat secret)
 //   POST /api/rooms/<id>/leave                                     (seat secret)
 //   POST /api/rooms/<id>/me                                        (seat secret)
-//        -> while playing: {"server": {"udp"}, "room_id", "token", "seat"}: what a
+//        -> {"state", "options"}; while playing also {"server": {"udp"}, "room_id", "token", "seat"}: what a
 //           client needs for the game server's Join. Only that seat's own token.
 // Game server API (Bearer control secret):
 //   POST /control/servers                {"control", "udp", "max_matches", "matches"}
@@ -42,6 +45,8 @@
 #include "npk/transport/siphash.hpp"
 
 namespace npk::lobby {
+
+inline constexpr std::size_t kMaxOptionsBytes = 1024;
 
 inline constexpr std::size_t kMinSecret = 16;
 
