@@ -29,9 +29,9 @@ NPK_UDP_PORT=$udp_port NPK_CONTROL_PORT=$control_port NPK_CONTROL_BIND=127.0.0.1
 sleep 0.5
 
 room="e2e-$RANDOM"
-timeout 90 "$bin/toy_bot" --lobby 127.0.0.1:$lobby_port --room "$room" --create 2 --frames 240 --name alice --timeout 60 >"$work/alice.out" 2>&1 & a=$!
+"$bin/toy_bot" --lobby 127.0.0.1:$lobby_port --room "$room" --create 2 --frames 240 --name alice --timeout 60 >"$work/alice.out" 2>&1 & a=$!
 sleep 1
-timeout 90 "$bin/toy_bot" --lobby 127.0.0.1:$lobby_port --room "$room" --name bob --timeout 60 >"$work/bob.out" 2>&1 & b=$!
+"$bin/toy_bot" --lobby 127.0.0.1:$lobby_port --room "$room" --name bob --timeout 60 >"$work/bob.out" 2>&1 & b=$!
 
 status=0
 wait "$a" || status=1
