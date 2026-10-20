@@ -6,3 +6,6 @@ DerivedData/
 xcuserdata/
 .DS_Store
 compile_commands.json
+
+# Secrets for local runs (see .env.example)
+/.env
