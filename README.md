@@ -15,7 +15,7 @@ Its first user is [ledgefall](https://github.com/scshafe/ledgefall).
 | Transport: UDP, handshake, acks, reliable and unreliable channels, RTT and clock sync | `npk::transport` |
 | Rollback netcode over your game's `Simulation` | `npk::session` |
 | Game server (many matches, lobby-issued tokens, control API) | `npk::gameserver`, `npk::gameserver::run` |
-| Lobby (rooms, seats, ready, long-poll) | `npk-lobby` (`apps/npk_lobby.cpp`) |
+| Lobby (rooms, seats, ready, long-poll) and the home page | `npk-lobby` (`apps/npk_lobby.cpp`); the page's text is `examples/toy/site.json` |
 | An example game, its server and a bot | `examples/toy` |
 
 ## Try the example stack

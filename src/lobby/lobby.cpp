@@ -134,15 +134,36 @@ void Lobby::handle(const Request& r, const transport::Address& peer, http::Respo
     out = http::constant_time_equal(http::bearer_token(r), cfg_.control_secret)
               ? route_control(r, seg)
               : (++stats_.unauthorized, error(401, "unauthorized"));
+  } else if (r.method == "GET" || r.method == "HEAD") {
+    out = serve_static(r);
   } else {
-    out = error(404, "not found");
+    out = error(405, "method not allowed");
   }
   if (!deferred) rs.send(std::move(out));
 }
 
+Response Lobby::serve_static(const Request& r) const {
+  const Asset* embedded = default_asset(r.path);
+  std::optional<Asset> from_dir;
+  if (!cfg_.site_dir.empty()) from_dir = read_site_file(cfg_.site_dir, r.path);
+  if (!from_dir && !embedded) return error(404, "not found");
+  const std::string& type = from_dir ? from_dir->content_type : embedded->content_type;
+  Response out;
+  out.status = 200;
+  out.content_type = type;
+  out.body = from_dir ? from_dir->body : embedded->body;
+  // Nothing but the lobby's own files may load, run or be embedded.
+  out.headers.emplace_back("Content-Security-Policy",
+                           "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
+                           "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+  out.headers.emplace_back("Referrer-Policy", "no-referrer");
+  out.headers.emplace_back("X-Frame-Options", "DENY");
+  return out;
+}
+
 Response Lobby::route_api(const Request& r, const std::vector<std::string>& seg, http::Responder rs,
                           const transport::Address& peer, bool& deferred) {
-  if (r.method != "GET") {
+  if (r.method != "GET" && r.method != "HEAD") {
     std::uint64_t h = transport::siphash24(rate_key_, std::span<const std::uint8_t>(peer.ip));
     if (!writes_.take(h, now_)) {
       ++stats_.rate_limited;
@@ -160,6 +181,7 @@ Response Lobby::route_api(const Request& r, const std::vector<std::string>& seg,
     v.set("game_servers", live);
     return ok_json(v);
   }
+  if (seg.size() == 2 && seg[1] == "site" && r.method == "GET") return ok_json(cfg_.site.to_json());
   if (seg.size() < 2 || seg[1] != "rooms") return error(404, "not found");
   if (seg.size() == 2) {
     if (r.method == "GET") {

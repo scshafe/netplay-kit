@@ -20,10 +20,19 @@ struct Result {
   bool ok = false;     // a complete, well-formed response arrived
   int status = 0;      // when ok
   std::string body;    // when ok
+  Headers headers;     // when ok; names lowercased
   std::string error;   // when not ok: "connect failed", "timed out", ...
 
-  static Result failure(std::string why) { return Result{false, 0, {}, std::move(why)}; }
-  static Result success(int status, std::string body) { return Result{true, status, std::move(body), {}}; }
+  static Result failure(std::string why) { return Result{false, 0, {}, {}, std::move(why)}; }
+  static Result success(int status, std::string body, Headers headers = {}) {
+    return Result{true, status, std::move(body), std::move(headers), {}};
+  }
+  const std::string* header(std::string_view lowercase_name) const {
+    for (const auto& kv : headers) {
+      if (kv.first == lowercase_name) return &kv.second;
+    }
+    return nullptr;
+  }
 };
 
 struct ClientConfig {

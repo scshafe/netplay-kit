@@ -33,6 +33,7 @@ struct Server::Conn {
   std::string in, out;
   std::size_t written = 0;
   Micros deadline = 0;
+  bool head = false;  // the request was HEAD: send the headers, not the body
 };
 
 bool Responder::send(Response r) const { return server_ && server_->respond(id_, std::move(r)); }
@@ -131,6 +132,7 @@ void Server::accept_new(Micros now) {
 
 void Server::queue(Conn& c, Response r, Micros now) {
   c.out = serialize(r);
+  if (c.head) c.out.resize(c.out.find("\r\n\r\n") + 4);
   c.written = 0;
   c.state = Conn::State::Writing;
   c.deadline = now + cfg_.write_timeout;
@@ -172,6 +174,7 @@ void Server::read_from(Conn& c, Micros now) {
       }
       if (pr.state == Parse::Done) {
         c.state = Conn::State::Handling;
+        c.head = req.method == "HEAD";
         c.deadline = now + cfg_.response_timeout;
         ++stats_.requests;
         const std::uint64_t id = c.id;

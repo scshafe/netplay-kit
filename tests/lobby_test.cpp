@@ -2,7 +2,11 @@
 // the matches) and scripted fake ones for the failure paths. One thread, one
 // virtual clock: every component is updated each millisecond.
 
+#include <unistd.h>
+
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <random>
 
@@ -75,6 +79,13 @@ struct World {
     int status = -1;
     json::Value body;
     std::string raw;
+    http::Headers headers;
+    const std::string* header(std::string_view n) const {
+      for (const auto& kv : headers) {
+        if (kv.first == n) return &kv.second;
+      }
+      return nullptr;
+    }
   };
   Answer call(const std::string& method, const std::string& path, const std::string& body = "",
               const std::string& bearer = "", Address to = {}) {
@@ -91,6 +102,7 @@ struct World {
     Answer a;
     a.status = got->ok ? got->status : -1;
     a.raw = got->body;
+    a.headers = got->headers;
     if (auto v = json::parse(got->body)) a.body = std::move(*v);
     return a;
   }
@@ -501,6 +513,54 @@ void random_requests_do_no_harm() {
   CHECK(w.call("GET", "/api/status").status == 200);
 }
 
+void the_home_page() {
+  lobby::LobbyConfig cfg;
+  auto site = lobby::parse_site_config("{\"title\":\"Toy Brawl\",\"download\":{\"url\":\"https://x.example/get\"}}");
+  CHECK(site);
+  cfg.site = *site;
+  World w(cfg);
+  auto home = w.call("GET", "/");
+  CHECK(home.status == 200 && home.header("content-type")->rfind("text/html", 0) == 0);
+  CHECK(home.raw.find("<title>") != std::string::npos && home.raw.find("/app.js") != std::string::npos);
+  CHECK(home.header("content-security-policy")->find("default-src 'none'") == 0);
+  CHECK(home.header("content-security-policy")->find("script-src 'self'") != std::string::npos);
+  CHECK(home.header("content-security-policy")->find("unsafe-inline") == std::string::npos);
+  CHECK(*home.header("x-frame-options") == "DENY" && *home.header("x-content-type-options") == "nosniff" &&
+        *home.header("referrer-policy") == "no-referrer");
+  CHECK(w.call("GET", "/index.html").status == 200 && w.call("GET", "/index.html").raw == home.raw);
+  auto css = w.call("GET", "/style.css");
+  auto js = w.call("GET", "/app.js");
+  CHECK(css.status == 200 && css.header("content-type")->rfind("text/css", 0) == 0);
+  CHECK(js.status == 200 && js.header("content-type")->rfind("text/javascript", 0) == 0);
+  CHECK(w.call("GET", "/nothing").status == 404 && w.call("GET", "/api").status == 404);
+  CHECK(w.call("POST", "/").status == 405 && w.call("DELETE", "/app.js").status == 405);
+  CHECK(w.call("GET", "/../secret").status == 400 && w.call("GET", "/%2e%2e/secret").status == 400);
+  auto text = w.call("GET", "/api/site");
+  CHECK(text.status == 200 && *text.body.find("title")->as_string() == "Toy Brawl" &&
+        *text.body.find("download")->find("url")->as_string() == "https://x.example/get" && text.body.find("steps")->as_array()->size() == 3);
+  // The page is public: it needs no secret, and shows no secret.
+  CHECK(home.raw.find(kSecret) == std::string::npos && text.raw.find(kSecret) == std::string::npos);
+  // The text of rooms goes to the page as data: the API returns it as JSON, escaped.
+  w.make_room("<script>alert(1)</script>");
+  auto rooms = w.call("GET", "/api/rooms");
+  CHECK(*rooms.header("content-type") == "application/json" && *rooms.header("x-content-type-options") == "nosniff");
+}
+
+void a_site_directory_replaces_the_page() {
+  const auto dir = std::filesystem::temp_directory_path() / ("npk-lobby-site-" + std::to_string(::getpid()));
+  std::filesystem::create_directories(dir);
+  std::ofstream(dir / "index.html") << "<html><body>my own page</body></html>";
+  std::ofstream(dir / "extra.css") << "x{}";
+  lobby::LobbyConfig cfg;
+  cfg.site_dir = dir;
+  World w(cfg);
+  CHECK(w.call("GET", "/").raw.find("my own page") != std::string::npos);
+  CHECK(w.call("GET", "/extra.css").status == 200);
+  CHECK(w.call("GET", "/app.js").status == 200);  // not in the directory: the default one
+  CHECK(w.call("GET", "/.hidden").status == 404 && w.call("GET", "/extra.exe").status == 404);
+  std::filesystem::remove_all(dir);
+}
+
 }  // namespace
 
 int main() {
@@ -514,6 +574,8 @@ int main() {
   the_control_side_is_authenticated_and_checked();
   writes_are_rate_limited_per_address();
   absent_players_and_stale_rooms_are_cleaned_up();
+  the_home_page();
+  a_site_directory_replaces_the_page();
   random_requests_do_no_harm();
   std::puts("lobby_test: ok");
   return 0;

@@ -27,6 +27,8 @@ add_library(netplay_kit
   src/http/server.cpp
   src/json/json.cpp
   src/lobby/lobby.cpp
+  src/lobby/site.cpp
+  src/lobby/site_default.cpp
   src/util/random.cpp
   src/session/client_session.cpp
   src/session/match.cpp
@@ -102,6 +104,7 @@ if(NPK_BUILD_TESTS)
   npk_test(http_test)
   npk_test(gameserver_test)
   npk_test(lobby_test)
+  npk_test(site_test)
 
   add_test(NAME e2e COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e.sh ${CMAKE_BINARY_DIR})
   set_tests_properties(e2e PROPERTIES TIMEOUT 120)

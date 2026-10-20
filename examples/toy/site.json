@@ -1,0 +1,16 @@
+{
+  "title": "Toy Brawl",
+  "tagline": "Two to four players, one tiny arena.",
+  "description": "The example game that ships with netplay-kit: run, jump and bump into each other, with rollback netcode keeping every screen in step.",
+  "download": {
+    "label": "Download for macOS",
+    "url": "https://example.com/toy-brawl/latest",
+    "note": "macOS 14 or later"
+  },
+  "steps": [
+    "Download and open the game, then choose Online.",
+    "Pick a room from the list below, or create your own.",
+    "Take a seat and press Ready. The match starts when everyone is ready.",
+    "Rooms are free: bring friends by sharing the lobby address shown on this page."
+  ]
+}

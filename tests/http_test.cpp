@@ -104,6 +104,15 @@ void echo_round_trip() {
   CHECK(server->connection_count() == 0 && client.in_flight() == 0);
 }
 
+void head_gets_headers_only() {
+  auto server = make_server([](const Request&, const Address&, Responder rs) { rs.send(Response::json(200, "{\"body\":true}")); });
+  Raw raw(server->local_address());
+  raw.send("HEAD /x HTTP/1.1\r\n\r\n");
+  CHECK(pump([&](Micros n) { server->update(n); raw.read(); }, [&] { return raw.closed; }));
+  CHECK(raw.got.find("HTTP/1.1 200 ") == 0 && raw.got.find("Content-Length: 13\r\n") != std::string::npos);
+  CHECK(raw.got.size() >= 4 && raw.got.substr(raw.got.size() - 4) == "\r\n\r\n");  // nothing after the headers
+}
+
 void many_at_once() {
   int served = 0;
   auto server = make_server([&](const Request&, const Address&, Responder rs) {
@@ -318,6 +327,7 @@ void names_and_addresses() {
 
 int main() {
   echo_round_trip();
+  head_gets_headers_only();
   many_at_once();
   deferred_answers();
   answering_a_gone_peer_is_harmless();
