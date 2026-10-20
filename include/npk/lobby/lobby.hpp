@@ -155,7 +155,6 @@ class Lobby {
   transport::SipKey rate_key_{};
   transport::BucketTable writes_;
   transport::Micros now_ = 0;
-  std::uint64_t id_counter_ = 0;
   LobbyStats stats_;
 };
 
