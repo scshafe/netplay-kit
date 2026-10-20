@@ -12,7 +12,7 @@ record in `docs/decisions/`.
 | `npk::session` | client and server | The netcode, generic over a game's `Simulation` interface (`step(frame, inputs)`, `snapshot`, `restore`, `hash`, input encode and decode): input exchange, prediction, rollback and re-simulation, input delay, desync detection by hash |
 | `npk-gameserver` | container | Hosts matches. It is authoritative: it orders and timestamps inputs, relays them, checks hashes and decides the result. It embeds a game's simulation through the same interface |
 | `npk-lobby` | container | HTTP + JSON (and a push channel, such as WebSocket or long-poll): rooms, seats, ready and start, and handing a room to a game server |
-| Home page | served by the lobby | A small static site: the game, a download link for the macOS app, how to join |
+| Home page | served by the lobby | A small static site: the game, a download link for the macOS app, how to join, and the rooms right now |
 
 ## Netcode model (decided: `docs/decisions/0001-netcode-model.md`)
 
@@ -225,6 +225,31 @@ Planned PRs: in-tree JSON; HTTP server and client; matches hosted in rooms
 with tokens, and the game server (done); the lobby (done); the executables,
 images and a compose file with an end-to-end test.
 
+## Home page (milestone 5)
+
+The lobby serves it at `/` (`npk/lobby/site.hpp`). The kit ships a default site:
+one HTML file, one style sheet, one script, no external resources and nothing
+inline, so the page's Content-Security-Policy is `default-src 'none'` plus
+`'self'` for script, style, images, fonts and fetches, with `frame-ancestors
+'none'`, `Referrer-Policy: no-referrer` and `nosniff`. It shows the game's title,
+tagline and description, a download button for the client, the steps to join,
+the lobby address to type into the game (the page's own origin), and the rooms
+right now (open and playing, from `/api/rooms`, refreshed every five seconds and
+paused while the tab is hidden), with a note when no game server is online. Room
+names and everything else a visitor can influence are put in with `textContent`,
+never as markup; a test checks the script uses no `innerHTML`, `eval` or inline
+handlers.
+
+What it says is the game's, not the kit's: `site.json` (`NPK_SITE_FILE`) holds
+`title`, `tagline`, `description`, `download` (`label`, `url`, `note`; http or
+https only) and `steps`, with every field bounded and unknown fields refused. The
+client download is a link to wherever the game publishes it (a release page), not
+a file the lobby serves. A game that wants its own look sets `NPK_SITE_DIR`: files
+there replace or add to the defaults. Only plain names, known file types
+(html, css, js, json, txt, images, woff2) and files up to 2 MiB are served, and a
+path that resolves, through a symlink or otherwise, outside the directory is a 404.
+`GET /api/site` returns the text as JSON for the script.
+
 ## Network path (measured)
 
 The scshafe runner lane puts each service on its own tailnet node: a Tailscale
@@ -333,4 +358,4 @@ cannot resolve compose service names.
    game server"): done, with an end-to-end test of the real executables.
 4. **The UDP-over-tailnet proof** on the PC (with the owner session): done, see
    "Network path (measured)".
-5. The home page.
+5. The home page: done.

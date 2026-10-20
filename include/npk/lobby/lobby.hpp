@@ -5,6 +5,8 @@
 // It is game-agnostic: a room has a free-form game name and an options object
 // that are passed on to the game server unread.
 //
+// The home page is served at / (see site.hpp); GET /api/site is its text as JSON.
+//
 // Player API (no accounts; a seat is held by a secret returned when joining, sent
 // back as `Authorization: Bearer <seat secret>`):
 //   GET  /api/status
@@ -35,6 +37,7 @@
 #include "npk/http/client.hpp"
 #include "npk/http/server.hpp"
 #include "npk/json/json.hpp"
+#include "npk/lobby/site.hpp"
 #include "npk/transport/ratelimit.hpp"
 #include "npk/transport/siphash.hpp"
 
@@ -60,6 +63,9 @@ struct LobbyConfig {
   // Per source address: requests that change something (a token bucket).
   double writes_per_second = 2;
   double write_burst = 20;
+  // The home page (site.hpp): what it says, and optionally a directory of files that replace the default page's.
+  SiteConfig site{};
+  std::filesystem::path site_dir{};
   std::function<void(std::string_view)> log;  // optional; never given a secret or a token
 };
 
@@ -124,6 +130,7 @@ class Lobby {
   void handle(const http::Request& r, const transport::Address& peer, http::Responder rs);
   http::Response route_api(const http::Request& r, const std::vector<std::string>& seg, http::Responder rs,
                            const transport::Address& peer, bool& deferred);
+  http::Response serve_static(const http::Request& r) const;
   http::Response route_control(const http::Request& r, const std::vector<std::string>& seg);
   http::Response create_room(const http::Request& r);
   http::Response join(Room& room, const http::Request& r);

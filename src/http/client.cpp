@@ -140,7 +140,7 @@ void Client::update(Micros now) {
     ClientResponse resp;
     const ParseResult pr = parse_response(c.in, cfg_.limits, resp);
     if (pr.state == Parse::Done) {
-      finish(cur, Result::success(resp.status, std::move(resp.body)));
+      finish(cur, Result::success(resp.status, std::move(resp.body), std::move(resp.headers)));
     } else if (pr.state == Parse::Error || closed) {
       finish(cur, Result::failure(pr.state == Parse::Error || !c.in.empty() ? "bad response" : "connection closed"));
     }

@@ -31,6 +31,7 @@ void valid() {
   p = parse(post + "GET / HTTP/1.1\r\n\r\n", r);  // anything after the body is left alone
   CHECK(p.state == Parse::Done && p.consumed == post.size());
   CHECK(parse("DELETE /x HTTP/1.0\r\n\r\n", r).state == Parse::Done);
+  CHECK(parse("HEAD /x HTTP/1.1\r\n\r\n", r).state == Parse::Done && r.method == "HEAD");
   CHECK(parse("GET / HTTP/1.1\r\nX-Odd:   spaced value \t\r\n\r\n", r).state == Parse::Done && *r.header("x-odd") == "spaced value");
   CHECK(parse("GET / HTTP/1.1\r\nContent-Length: 3\r\nContent-Length: 3\r\n\r\nabc", r).state == Parse::Done);
   // Header names are case-insensitive.

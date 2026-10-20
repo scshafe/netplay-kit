@@ -141,7 +141,7 @@ ParseResult parse_request(std::string_view data, const Limits& limits, Request& 
     if (!is_token_char(c)) return error(400);
   }
   if (version != "HTTP/1.1" && version != "HTTP/1.0") return error(version.substr(0, 5) == "HTTP/" ? 505 : 400);
-  if (method != "GET" && method != "POST" && method != "PUT" && method != "DELETE") return error(405);
+  if (method != "GET" && method != "HEAD" && method != "POST" && method != "PUT" && method != "DELETE") return error(405);
   if (target.empty() || target.front() != '/') return error(400);
   for (char c : target) {
     if (!is_target_char(c)) return error(400);
@@ -247,7 +247,7 @@ bool clean(std::string_view s) {
 std::string serialize(const Response& r) {
   std::string o = "HTTP/1.1 " + std::to_string(r.status) + " " + reason_phrase(r.status) + "\r\n";
   if (clean(r.content_type) && !r.body.empty()) o += "Content-Type: " + r.content_type + "\r\n";
-  o += "Content-Length: " + std::to_string(r.body.size()) + "\r\nConnection: close\r\nCache-Control: no-store\r\n";
+  o += "Content-Length: " + std::to_string(r.body.size()) + "\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n";
   for (const auto& kv : r.headers) {
     if (clean(kv.first) && clean(kv.second) && !kv.first.empty()) o += kv.first + ": " + kv.second + "\r\n";
   }

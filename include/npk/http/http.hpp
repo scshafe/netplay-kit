@@ -28,7 +28,7 @@ struct Limits {
 using Headers = std::vector<std::pair<std::string, std::string>>;  // names lowercased
 
 struct Request {
-  std::string method;  // GET, POST, PUT or DELETE
+  std::string method;  // GET, HEAD, POST, PUT or DELETE
   std::string path;    // the target before '?': starts with '/', printable ASCII, no "..", no '%'
   std::string query;   // after '?', raw
   Headers headers;

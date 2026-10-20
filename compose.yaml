@@ -8,6 +8,10 @@ services:
     build: { context: ., dockerfile: docker/Dockerfile, target: lobby }
     environment:
       - NPK_CONTROL_SECRET
+      - NPK_SITE_FILE=/site.json
+    volumes:
+      # What the home page says (title, download link, steps): a game's own file goes here.
+      - ./examples/toy/site.json:/site.json:ro
     ports:
       - "${NPK_LOBBY_PORT:-8080}:8080"
     restart: unless-stopped

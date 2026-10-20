@@ -28,6 +28,13 @@ NPK_UDP_PORT=$udp_port NPK_CONTROL_PORT=$control_port NPK_CONTROL_BIND=127.0.0.1
   "$bin/toy_gameserver" 2>"$work/gameserver.log" & gs=$!; pids+=("$gs")
 sleep 0.5
 
+# The home page and its files are served, and the script at least parses where node is available.
+curl -sf "http://127.0.0.1:$lobby_port/" | grep -q "<title>" || { echo "no home page"; exit 1; }
+curl -sf "http://127.0.0.1:$lobby_port/style.css" >/dev/null || { echo "no style sheet"; exit 1; }
+curl -sf "http://127.0.0.1:$lobby_port/app.js" >"$work/app.js" || { echo "no script"; exit 1; }
+if command -v node >/dev/null 2>&1; then node --check "$work/app.js" || { echo "app.js does not parse"; exit 1; }; fi
+curl -sf "http://127.0.0.1:$lobby_port/api/site" | grep -q '"steps"' || { echo "no site text"; exit 1; }
+
 room="e2e-$RANDOM"
 "$bin/toy_bot" --lobby 127.0.0.1:$lobby_port --room "$room" --create 2 --frames 240 --name alice --timeout 60 >"$work/alice.out" 2>&1 & a=$!
 sleep 1
