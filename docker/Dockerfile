@@ -1,3 +1,5 @@
+# Base images are pinned by digest (checked 2026-10-21) so a build never reuses a stale cached base.
+# To refresh: docker pull the tag, then replace the digest.
 # The kit's example stack: the lobby, and a game server running the toy game.
 # Build from the repository root:
 #   docker build -f docker/Dockerfile --target lobby -t npk-lobby .
@@ -8,7 +10,7 @@
 # run as uid 65534, and need no capabilities, volumes or published control port.
 # A game builds its own server image the same way, with its own Simulation and
 # `npk::gameserver::run`.
-FROM gcc:13-bookworm AS build
+FROM gcc:13-bookworm@sha256:79eb0a60ad300f2b4f3723f1cbd1f61eb00ca6be488ab4f635129b91d7dd98eb AS build
 WORKDIR /src
 COPY include include
 COPY src src
@@ -21,13 +23,13 @@ RUN mkdir /obj && cd /obj \
 RUN g++ -std=c++20 -O2 -static-libstdc++ -static-libgcc -Wall -Wextra -I/src/include -I/src/examples/toy -o /npk-lobby /src/apps/npk_lobby.cpp /libnpk.a \
     && g++ -std=c++20 -O2 -static-libstdc++ -static-libgcc -Wall -Wextra -I/src/include -I/src/examples/toy -o /toy-gameserver /src/examples/toy/toy_gameserver.cpp /libnpk.a
 
-FROM debian:bookworm-slim AS lobby
+FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS lobby
 COPY --from=build /npk-lobby /npk-lobby
 USER 65534:65534
 EXPOSE 8080/tcp
 ENTRYPOINT ["/npk-lobby"]
 
-FROM debian:bookworm-slim AS toy-gameserver
+FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS toy-gameserver
 COPY --from=build /toy-gameserver /toy-gameserver
 USER 65534:65534
 EXPOSE 7777/udp
